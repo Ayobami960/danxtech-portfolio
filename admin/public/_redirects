@@ -1,6 +1,8 @@
-# Replace api.example.com with your backend host.
+# Netlify-format rewrites. Vercel ignores this file; vercel.json carries the
+# same proxy rules. Both sides proxy /api/* and /socket.io/* to the backend so
+# the session cookie is first-party on the Admin origin.
 # Static-host rewrites do NOT proxy WebSockets; the Admin detects this and
 # switches to Socket.IO polling, then RTK Query polling if needed.
-/api/*        https://api.example.com/api/:splat        200
-/socket.io/*  https://api.example.com/socket.io/:splat  200
+/api/*        https://danxtech-portfolio-server.vercel.app/api/:splat        200
+/socket.io/*  https://danxtech-portfolio-server.vercel.app/socket.io/:splat  200
 /*            /index.html                                200
