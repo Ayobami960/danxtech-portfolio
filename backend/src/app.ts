@@ -1,8 +1,8 @@
-import express, { type Express } from "express";
+import express, { type Express, type RequestHandler } from "express";
 import compression from "compression";
 import cookieParser from "cookie-parser";
 import cors from "cors";
-import helmet from "helmet";
+import helmetImport from "helmet";
 import { API_PREFIX } from "./config/constants.js";
 import { env } from "./config/env.js";
 import {
@@ -14,6 +14,16 @@ import { notFoundHandler } from "./middleware/not-found.js";
 import { requestContext } from "./middleware/request-context.js";
 import { apiRouter } from "./routes/index.js";
 import { createMediaRouter } from "./routes/media.routes.js";
+
+type HelmetFn = (options?: Record<string, unknown>) => RequestHandler;
+
+// Older helmet typings make the default import look like a namespace under
+// NodeNext. At runtime it is either the function or { default: function }.
+const helmetModule = helmetImport as unknown as
+  | HelmetFn
+  | { default: HelmetFn };
+const helmet: HelmetFn =
+  typeof helmetModule === "function" ? helmetModule : helmetModule.default;
 
 /**
  * Allowlist only the configured frontend origins. Requests without an Origin
@@ -108,15 +118,7 @@ export const createApp = (): Express => {
   return app;
 };
 
-/**
- * Vercel's Express preset looks for a default export at app|index|server (or
- * the same names under src/). Exporting the built app here lets a serverless
- * deployment reuse the exact routing stack that server.ts serves, without the
- * long-running wiring (listener, Socket.IO, cron-style jobs) it needs.
- *
- * The server.ts entry imports this instance, so a single app is created per
- * process in both deployment shapes.
- */
+
 const app = createApp();
 
 export default app;
