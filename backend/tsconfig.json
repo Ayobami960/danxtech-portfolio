@@ -21,6 +21,11 @@
 
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
+    // Explicit, not implied: helmet ships CommonJS typings for its `require`
+    // entry, so a build that resolves them must still be able to call the
+    // default import.
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
     "moduleDetection": "force",
     "skipLibCheck": true,
     "resolveJsonModule": true,
