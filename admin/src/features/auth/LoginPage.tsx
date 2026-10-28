@@ -30,6 +30,7 @@ export default function LoginPage() {
   const status = useAppSelector((state) => state.auth.status);
   const [step, setStep] = useState<"password" | "code">("password");
   const [error, setError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
   const next = safeNext(params.get("next"));
 
   const passwordForm = useForm<LoginForm>({
@@ -52,6 +53,7 @@ export default function LoginPage() {
     try {
       const result = await dispatch(login(values)).unwrap();
       if (result.requires2fa) {
+        setShowPassword(false);
         setStep("code");
       } else {
         navigate(next, { replace: true });
@@ -120,13 +122,24 @@ export default function LoginPage() {
                 <label className="label" htmlFor="password">
                   Password
                 </label>
-                <input
-                  id="password"
-                  type="password"
-                  autoComplete="current-password"
-                  className="field"
-                  {...passwordForm.register("password")}
-                />
+                <div className="relative">
+                  <input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    autoComplete="current-password"
+                    className="field !pr-16"
+                    {...passwordForm.register("password")}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    aria-pressed={showPassword}
+                    className="absolute inset-y-0 right-3 flex items-center font-mono text-[11px] uppercase tracking-[0.15em] text-[#7c8fa6] transition hover:text-white"
+                  >
+                    {showPassword ? "Hide" : "Show"}
+                  </button>
+                </div>
                 {passwordForm.formState.errors.password ? (
                   <p className="mt-1 text-xs text-red-300">
                     {passwordForm.formState.errors.password.message}
@@ -191,6 +204,7 @@ export default function LoginPage() {
                 onClick={() => {
                   setStep("password");
                   setError(null);
+                  setShowPassword(false);
                 }}
               >
                 Back to sign in
