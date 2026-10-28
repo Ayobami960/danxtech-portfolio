@@ -93,7 +93,7 @@ export default function LoginPage() {
             AD
           </div>
           <h1 className="font-grotesk text-2xl font-bold text-white">Admin access</h1>
-          <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.2em] text-[#7c8fa6]">
+          <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.2em] text-muted">
             Adetoye Daniel Kehinde
           </p>
         </div>
@@ -127,7 +127,7 @@ export default function LoginPage() {
                     id="password"
                     type={showPassword ? "text" : "password"}
                     autoComplete="current-password"
-                    className="field !pr-16"
+                    className="field pr-16!"
                     {...passwordForm.register("password")}
                   />
                   <button
@@ -135,7 +135,7 @@ export default function LoginPage() {
                     onClick={() => setShowPassword((prev) => !prev)}
                     aria-label={showPassword ? "Hide password" : "Show password"}
                     aria-pressed={showPassword}
-                    className="absolute inset-y-0 right-3 flex items-center font-mono text-[11px] uppercase tracking-[0.15em] text-[#7c8fa6] transition hover:text-white"
+                    className="absolute inset-y-0 right-3 flex items-center font-mono text-[11px] uppercase tracking-[0.15em] text-muted transition hover:text-white"
                   >
                     {showPassword ? "Hide" : "Show"}
                   </button>
@@ -164,7 +164,7 @@ export default function LoginPage() {
           ) : (
             <form onSubmit={onCode} className="space-y-4" noValidate>
               <div>
-                <p className="text-sm text-[#9db0c6]">
+                <p className="text-sm text-soft">
                   Enter the 6-digit code from your authenticator app, or a recovery code.
                 </p>
                 <label className="label mt-4" htmlFor="code">
