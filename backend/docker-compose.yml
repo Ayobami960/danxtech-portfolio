@@ -1,0 +1,81 @@
+# Local end-to-end stack: API + PostgreSQL.
+#
+#   docker compose up --build
+#
+# The API container applies the committed migrations before it starts, so the
+# schema is always present. Then create the single admin:
+#
+#   docker compose exec api node dist/scripts/admin-create.js
+#
+# The fallback secrets below exist so `docker compose up` works out of the box
+# for local development. Replace them (and set COOKIE_DOMAIN, FRONTEND_ORIGIN,
+# SMTP, etc.) before exposing this stack anywhere.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: portfolio
+      POSTGRES_PASSWORD: portfolio
+      POSTGRES_DB: portfolio
+    # Host port 5435 avoids clashing with a locally installed PostgreSQL.
+    ports:
+      - "127.0.0.1:5435:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U portfolio -d portfolio"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  api:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+      TRUST_PROXY: "false"
+      DATABASE_URL: postgresql://portfolio:portfolio@postgres:5432/portfolio
+
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3000}
+      FRONTEND_REVALIDATE_URL: ${FRONTEND_REVALIDATE_URL:-}
+      REVALIDATE_SECRET: ${REVALIDATE_SECRET:-}
+
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-local-dev-only-access-secret-000000000000}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-local-dev-only-refresh-secret-0000000000}
+      CSRF_SECRET: ${CSRF_SECRET:-local-dev-only-csrf-secret-000000000000000}
+      IP_HASH_SALT: ${IP_HASH_SALT:-local-dev-only-ip-hash-salt-000000000000}
+
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
+      COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
+
+      OWNER_EMAIL: ${OWNER_EMAIL:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+
+      STORAGE_DRIVER: local
+      STORAGE_LOCAL_DIR: /app/storage
+      PUBLIC_MEDIA_BASE_URL: ${PUBLIC_MEDIA_BASE_URL:-http://localhost:8080}
+
+      RESUME_DOWNLOAD_NAME: ${RESUME_DOWNLOAD_NAME:-Adetoye-Daniel-Kehinde-Resume.pdf}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "8080:8080"
+    volumes:
+      - storage_data:/app/storage
+    command:
+      - sh
+      - -c
+      - node dist/scripts/migrate.js && node dist/src/server.js
+
+volumes:
+  postgres_data:
+  storage_data:

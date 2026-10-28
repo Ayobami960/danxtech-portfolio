@@ -1,0 +1,1 @@
+ALTER TABLE "skill_groups" ADD COLUMN "color" varchar(7) DEFAULT '#4f8ef7' NOT NULL;

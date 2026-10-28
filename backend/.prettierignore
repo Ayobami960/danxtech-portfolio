@@ -1,0 +1,6 @@
+node_modules
+dist
+drizzle
+_legacy
+storage
+package-lock.json

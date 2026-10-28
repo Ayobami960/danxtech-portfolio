@@ -1,0 +1,6 @@
+# Replace api.example.com with your backend host.
+# Static-host rewrites do NOT proxy WebSockets; the Admin detects this and
+# switches to Socket.IO polling, then RTK Query polling if needed.
+/api/*        https://api.example.com/api/:splat        200
+/socket.io/*  https://api.example.com/socket.io/:splat  200
+/*            /index.html                                200

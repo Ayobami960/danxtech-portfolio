@@ -1,0 +1,108 @@
+@import "tailwindcss";
+
+
+/* ================================================================
+   TAILWIND CONFIG — embedded inline so tailwind.config.ts only
+   needs content paths. All theme values live here.
+   ================================================================ */
+
+@layer base {
+  /* ── Custom fonts ─────────────────────────────────────────── */
+  /* Space Grotesk → font-grotesk, JetBrains Mono → font-mono  */
+  /* (loaded via next/font in layout.tsx)                        */
+}
+
+@layer utilities {
+  /* ── Font families ────────────────────────────────────────── */
+  .font-grotesk { font-family: var(--font-grotesk), sans-serif; }
+  .font-mono    { font-family: var(--font-mono), monospace; }
+
+  /* ── Colour utilities (mirrors tailwind.config colors) ──────── */
+  .text-blue   { color: #4f8ef7; }
+  .text-purple { color: #a78bfa; }
+  .text-pink   { color: #f472b6; }
+  .text-green  { color: #34d399; }
+  .text-gold   { color: #fbbf24; }
+  .text-cyan   { color: #22d3ee; }
+  .text-dim    { color: #6b7fa3; }
+  .text-mid    { color: #9aaac4; }
+
+  .bg-bg      { background-color: #05080f; }
+  .bg-bg2     { background-color: #080d1a; }
+  .bg-bg3     { background-color: #0d1424; }
+  .bg-surface { background-color: #111827; }
+
+  /* ── Background images (mirrors backgroundImage config) ─────── */
+  .bg-grad-blue-purple { background-image: linear-gradient(135deg,#4f8ef7,#a78bfa); }
+  .bg-grad-full        { background-image: linear-gradient(135deg,#4f8ef7 0%,#a78bfa 40%,#f472b6 80%,#fbbf24 100%); }
+
+  /* ── Box shadows (mirrors boxShadow config) ─────────────────── */
+  .shadow-glow-blue   { box-shadow: 0 0 0 1px rgba(79,142,247,0.25), 0 8px 32px rgba(79,142,247,0.15); }
+  .shadow-glow-purple { box-shadow: 0 0 0 1px rgba(167,139,250,0.25),0 8px 32px rgba(167,139,250,0.15); }
+  .shadow-glow-green  { box-shadow: 0 0 0 1px rgba(52,211,153,0.25), 0 8px 32px rgba(52,211,153,0.12); }
+  .shadow-glow-gold   { box-shadow: 0 0 0 1px rgba(251,191,36,0.25), 0 8px 32px rgba(251,191,36,0.10); }
+  .shadow-card        { box-shadow: 0 4px 24px rgba(0,0,0,0.35); }
+
+  /* ── Named animations (mirrors animation config) ─────────────── */
+  .animate-fade-up   { animation: fadeUp    0.7s ease forwards; }
+  .animate-fade-in   { animation: fadeIn    0.5s ease forwards; }
+  .animate-slide-r   { animation: slideRight 0.6s ease forwards; }
+  .animate-slide-l   { animation: slideLeft  0.6s ease forwards; }
+  .animate-orb-drift { animation: orbDrift  14s ease-in-out infinite; }
+  .animate-dot-pulse { animation: dotPulse   2s ease-in-out infinite; }
+  .animate-float     { animation: float      4s ease-in-out infinite; }
+  .animate-spin-slow { animation: spinSlow  12s linear infinite; }
+}
+
+/* ================================================================
+   DESIGN TOKENS  (CSS custom properties)
+   ================================================================ */
+:root {
+  --bg:        #05080f;
+  --bg2:       #080d1a;
+  --bg3:       #0d1424;
+  --surface:   #111827;
+  --surface2:  #1a2235;
+  --border:    rgba(255,255,255,0.06);
+  --border2:   rgba(255,255,255,0.10);
+
+  --blue:      #4f8ef7;
+  --blue2:     #6ea8fe;
+  --purple:    #a78bfa;
+  --pink:      #f472b6;
+  --green:     #34d399;
+  --gold:      #fbbf24;
+  --cyan:      #22d3ee;
+
+  --glow-blue:   rgba(79,142,247,0.22);
+  --glow-purple: rgba(167,139,250,0.18);
+  --glow-green:  rgba(52,211,153,0.15);
+
+  --text:      #e8edf5;
+  --text-dim:  #6b7fa3;
+  --text-mid:  #9aaac4;
+  --radius:    14px;
+  --radius-lg: 20px;
+}
+
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Scrollbar ──────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--surface2); border-radius: 3px; }
+
+/* ── Noise texture overlay ──────────────────────────────────── */
+body::before {
+  content: '';
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  opacity: 0.4;
+}

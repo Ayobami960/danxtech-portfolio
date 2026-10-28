@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+
+.env
+.env.*
+!.env.example
+
+# Local upload directory only. Anchored so src/storage (the storage drivers)
+# stays tracked and Vercel's build can resolve ../storage/index.js.
+/storage/
+
+*.log
+.DS_Store

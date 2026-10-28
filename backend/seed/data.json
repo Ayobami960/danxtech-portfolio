@@ -1,0 +1,338 @@
+{
+  "_comment": "Idempotent seed of the portfolio content. Images under client/public are referenced as external/ storage keys so deletion never touches them.",
+  "hero": {
+    "nameParts": ["Adetoye", "Daniel", "Kehinde"],
+    "typingPhrases": [
+      "Software Engineer",
+      "Performance Engineer",
+      "System Designer",
+      "AI Integrator",
+      "Vulnerability Analyst",
+      "Full-Stack Developer"
+    ],
+    "intro": "Full-stack engineer based in Nigeria, building secure, high-performance systems with React, Node.js and AI. I turn complex requirements into software that holds up under real traffic.",
+    "location": "Nigeria",
+    "isAvailable": true,
+    "availabilityLabel": "Available for new opportunities",
+    "stats": [
+      { "value": "2+", "label": "Years exp." },
+      { "value": "40%", "label": "Perf. gains" },
+      { "value": "5+", "label": "Live projects" },
+      { "value": "40%", "label": "Vulns. reduced" }
+    ],
+    "socials": [
+      { "platform": "github", "url": "https://github.com/Ayobami960" },
+      { "platform": "email", "url": "mailto:adetoyedaniel2020@gmail.com" }
+    ]
+  },
+  "about": {
+    "paragraphs": [
+      "I'm a results-driven software engineer based in Nigeria with a Computer Science degree from Ladoke Akintola University of Technology. I specialise in full-stack development with a deep focus on system design, AI integration, and building APIs that hold up under real traffic.",
+      "Beyond writing code, I care deeply about architecture — how systems communicate, fail gracefully, and grow without breaking. I've cut load times by half, boosted user engagement by 35%, and reduced production bugs significantly across the products I've worked on.",
+      "I hold certifications in React/Next.js (Udemy, Jonas Schmedtmann) and Python (CPD Accredited, TIL Career). I believe great software is an intersection of engineering rigour and product intuition."
+    ],
+    "tags": [
+      "System Design",
+      "AI/LLM Integration",
+      "Clean Architecture",
+      "TDD",
+      "Microservices",
+      "RAG Pipelines"
+    ],
+    "metrics": [
+      { "value": "45%", "label": "Load-time reduction" },
+      { "value": "35%", "label": "Engagement boost" },
+      { "value": "90%+", "label": "Test coverage" }
+    ],
+    "principles": [
+      {
+        "icon": "🏗️",
+        "title": "Architect first",
+        "body": "I design before I code. SOLID principles, clean architecture, and design patterns are my default language — not an afterthought."
+      },
+      {
+        "icon": "🤖",
+        "title": "AI-native",
+        "body": "RAG pipelines, LLM APIs, vector search — I build AI features that genuinely improve user experience, not gimmicks."
+      },
+      {
+        "icon": "⚡",
+        "title": "Performance obsessed",
+        "body": "Redis caching, query optimisation, and lazy loading are habits. I've cut load times by 45% and boosted engagement by 35%."
+      },
+      {
+        "icon": "🧪",
+        "title": "Test-driven",
+        "body": "90%+ test coverage across core services using Jest, Mocha, and Cypress. I ship with confidence, not hope."
+      }
+    ]
+  },
+  "credentials": [
+    {
+      "kind": "degree",
+      "title": "B.Sc. Computer Science",
+      "issuer": "Ladoke Akintola University of Technology",
+      "period": null,
+      "detail": "Computer Science"
+    },
+    {
+      "kind": "certification",
+      "title": "The Ultimate React Course 2025",
+      "issuer": "Udemy · Jonas Schmedtmann",
+      "period": "Mar 2025",
+      "detail": "React & Next.js"
+    },
+    {
+      "kind": "certification",
+      "title": "Advanced Next.js Development",
+      "issuer": "SSR, Static Generation & Edge Functions",
+      "period": "2025",
+      "detail": "Next.js"
+    },
+    {
+      "kind": "certification",
+      "title": "Python Programming",
+      "issuer": "TIL Career · CPD Accredited",
+      "period": "Feb 2026",
+      "detail": "ID: 3531-2026-7835-6108"
+    }
+  ],
+  "settings": {
+    "contactEmail": "adetoyedaniel2020@gmail.com",
+    "phone": "",
+    "location": "Nigeria"
+  },
+  "projects": [
+    {
+      "slug": "real-estate-platform",
+      "title": "Real Estate Platform",
+      "description": "A full-stack property listing and management platform with map integrations, AI-powered property recommendations, mortgage calculators, and agent dashboards. Built for scale with SSR and optimistic UI.",
+      "icon": "🏠",
+      "accentColor": "#3b82f6",
+      "tech": ["Next.js", "Node.js", "MongoDB", "OpenAI", "Redis"],
+      "stats": ["500+ listings", "AI recommendations", "Real-time map"],
+      "liveUrl": "https://real-estate-production-platform.vercel.app",
+      "githubUrl": "https://github.com/Ayobami960/Real_Estate_production_platform",
+      "featured": false,
+      "published": true,
+      "coverImage": "real/home.png",
+      "images": [
+        "real/home.png",
+        "real/home2.png",
+        "real/signup.png",
+        "real/admin.png",
+        "real/seller-board.png"
+      ]
+    },
+    {
+      "slug": "delivery-app",
+      "title": "Delivery App",
+      "description": "Real-time package tracking with WebSocket-based live updates, driver assignment algorithms, push notifications, and an operations admin dashboard.",
+      "icon": "🚚",
+      "accentColor": "#10b981",
+      "tech": ["React", "Express.js", "WebSockets", "PostgreSQL"],
+      "stats": ["Real-time tracking", "Live WebSockets", "Admin dashboard"],
+      "liveUrl": "https://grocery-delivery-door.vercel.app",
+      "githubUrl": "https://github.com/Ayobami960/grocery-delivery",
+      "featured": false,
+      "published": true,
+      "coverImage": "delivery/home.png",
+      "images": [
+        "delivery/all-product.png",
+        "delivery/cart.png",
+        "delivery/admin.png",
+        "delivery/admin_add-product.png"
+      ]
+    },
+    {
+      "slug": "e-commerce-platform",
+      "title": "E-Commerce Platform",
+      "description": "Feature-rich online store with product search, cart management, Stripe payments, order tracking, inventory management, and a full-featured merchant admin.",
+      "icon": "🛒",
+      "accentColor": "#a855f7",
+      "tech": ["Next.js", "Polar", "PostgreSQL", "TypeScript", "Tailwind CSS", "daisyui", "clerk"],
+      "stats": ["Polar payments", "Inventory mgmt", "Merchant portal"],
+      "liveUrl": "https://shoply-ecommerce-lpe5.onrender.com",
+      "githubUrl": "https://github.com/Ayobami960/shoply-ecommerce",
+      "featured": false,
+      "published": true,
+      "coverImage": "eco/home1.png",
+      "images": ["eco/home1.png", "eco/home2.png", "eco/cart.png", "eco/adminDashboard.png"]
+    },
+    {
+      "slug": "advanced-blog-platform",
+      "title": "Advanced Blog Platform",
+      "description": "A collaborative content platform with partnership tiers, co-authoring, AI-assisted writing, SEO optimisation, analytics dashboard, and subscription monetisation.",
+      "icon": "✍️",
+      "accentColor": "#f59e0b",
+      "tech": ["Next.js", "React.js", "Tailwind css", "daisyui", "Node.js", "nodemailer", "MongoDB", "socket.io"],
+      "stats": ["AI writing assist", "Partnership tiers", "Revenue analytics"],
+      "liveUrl": "https://news-orbit-social-platform.vercel.app",
+      "githubUrl": "https://github.com/Ayobami960/NewsOrbit-Social-Platform",
+      "featured": false,
+      "published": true,
+      "coverImage": "news-blogs/home.new.png",
+      "images": [
+        "news-blogs/home.new.png",
+        "news-blogs/home.dashboard.png",
+        "news-blogs/admin.neworbit.png",
+        "news-blogs/user_write_blog.png"
+      ]
+    },
+    {
+      "slug": "unit-converter-pro",
+      "title": "Unit Converter Pro",
+      "description": "Precision conversion tool supporting 150+ unit types — length, weight, temperature, data, currency (live rates), and more — with conversion history and offline support.",
+      "icon": "🔄",
+      "accentColor": "#ef4444",
+      "tech": ["React", "TypeScript", "Python", "Django"],
+      "stats": ["150+ unit types", "Live FX rates", "Offline support"],
+      "liveUrl": null,
+      "githubUrl": "https://github.com/Ayobami960",
+      "featured": false,
+      "published": true,
+      "coverImage": "home.png",
+      "images": []
+    },
+    {
+      "slug": "rag-document-qa",
+      "title": "RAG Document Q&A",
+      "description": "Semantic search across 10,000+ documents using vector embeddings and LLM-powered answers. Upload any PDF and ask anything about its contents.",
+      "icon": "🧠",
+      "accentColor": "#f0a500",
+      "tech": ["Python", "FastAPI", "OpenAI", "React", "Redis"],
+      "stats": ["10K+ documents", "Vector search", "LLM answers"],
+      "liveUrl": null,
+      "githubUrl": "https://github.com/Ayobami960",
+      "featured": false,
+      "published": true,
+      "coverImage": "home.png",
+      "images": []
+    },
+    {
+      "slug": "fingerprint-login-dashboard",
+      "title": "Fingerprint Login Dashboard",
+      "description": "Passwordless authentication using WebAuthn passkeys — no usernames, passwords, or recovery codes. Sign up and log in entirely with a fingerprint or Face ID scan.",
+      "icon": "🔐",
+      "accentColor": "#0F6F5C",
+      "tech": ["Django", "Django REST Framework", "React", "WebAuthn", "JWT"],
+      "stats": ["Passwordless auth", "Zero recovery codes", "JWT sessions"],
+      "liveUrl": null,
+      "githubUrl": "https://github.com/Ayobami960",
+      "featured": true,
+      "published": true,
+      "coverImage": "home.png",
+      "images": []
+    }
+  ],
+  "skills": [
+    { "title": "Frontend", "icon": "⚛️", "items": ["React.js", "Next.js", "TypeScript", "Vue.js", "Tailwind CSS", "Shadcn UI", "SASS", "Webpack"] },
+    { "title": "Backend", "icon": "🛠️", "items": ["Node.js", "Express.js", "FastAPI", "GraphQL", "REST API", "WebSockets", "Microservices"] },
+    { "title": "Databases", "icon": "🗄️", "items": ["MongoDB", "PostgreSQL", "MySQL", "Redis", "Mongoose", "Sequelize"] },
+    { "title": "AI / Python", "icon": "🤖", "items": ["OpenAI API", "Claude API", "RAG Pipelines", "Vector Embeddings", "Python", "FastAPI"] },
+    { "title": "Architecture", "icon": "🏛️", "items": ["SOLID", "Clean Architecture", "DDD", "Event-Driven", "MVC", "Repository Pattern"] },
+    { "title": "Testing", "icon": "🧪", "items": ["Jest", "Mocha", "Chai", "Supertest", "Postman", "Cypress", "TDD"] },
+    { "title": "AppSec & Auth", "icon": "🔐", "items": ["JWT", "OAuth2", "RBAC", "OWASP Top 10", "Session Management", "Input Validation", "CSP Headers", "Rate Limiting"] },
+    { "title": "Vulnerability Analysis", "icon": "🛡️", "items": ["Penetration Testing", "SAST / DAST", "Dependency Audits", "Burp Suite", "CVE Analysis", "Threat Modelling", "Security Code Review"] },
+    { "title": "DevOps", "icon": "🔧", "items": ["Docker", "GitHub Actions", "CI/CD", "Linux CLI", "Git", "Agile/Scrum"] }
+  ],
+  "experience": [
+    {
+      "type": "engineering",
+      "role": "Software Engineer & System Design",
+      "company": "Devfast",
+      "period": "Jan 2026 – Present",
+      "isCurrent": true,
+      "color": "#4f8ef7",
+      "highlights": [
+        "Architected full-stack apps with React.js + Node.js/Express.js using SOLID principles and Clean Architecture — reducing codebase complexity by 15%.",
+        "Integrated OpenAI and Claude LLM APIs for intelligent auto-complete, summarisation, and chatbot UIs — boosting user engagement by 35%.",
+        "Built a RAG-based document Q&A interface with vector embeddings enabling semantic search across 10,000+ records.",
+        "Implemented Redis caching on critical API routes, cutting data load times by 45%.",
+        "Set up CI/CD with GitHub Actions and containerised services with Docker for consistent zero-downtime deployments.",
+        "Led Agile/Scrum ceremonies across cross-functional teams, accelerating delivery cycles by 20%."
+      ]
+    },
+    {
+      "type": "security",
+      "role": "Application Security & Vulnerability Analyst",
+      "company": "Independent / Freelance",
+      "period": "2024 – Present",
+      "isCurrent": true,
+      "color": "#ef4444",
+      "highlights": [
+        "Conducted end-to-end vulnerability assessments on web applications, identifying and remediating OWASP Top 10 risks including SQLi, XSS, CSRF, and broken access control.",
+        "Performed application security (AppSec) reviews — analysing source code for insecure patterns, hardcoded secrets, and logic flaws before production deployment.",
+        "Reduced security vulnerabilities by 40% across audited applications through systematic dependency audits, security header hardening, and input validation enforcement.",
+        "Authored detailed vulnerability reports with CVSS severity scores, proof-of-concept exploits, and actionable remediation steps for development teams.",
+        "Integrated SAST tooling into CI/CD pipelines to catch security regressions automatically on every pull request.",
+        "Advised on secure authentication design — JWT hardening, OAuth2 flows, RBAC models, and session management best practices."
+      ]
+    },
+    {
+      "type": "engineering",
+      "role": "Software Engineer",
+      "company": "Devfast",
+      "period": "Sep 2024 – Dec 2025",
+      "isCurrent": false,
+      "color": "#a78bfa",
+      "highlights": [
+        "Built mobile-first accessible websites contributing to back-end Express.js APIs, increasing mobile traffic by 80%.",
+        "Implemented JWT-based authentication and session management following OWASP security best practices.",
+        "Wrote unit and integration tests with Jest and Mocha, reducing production bugs by 30%.",
+        "Reduced security vulnerabilities by 40% through dependency audits, input validation, and security headers.",
+        "Ensured cross-browser compatibility across 5 major browsers with 100% error-free rendering."
+      ]
+    }
+  ],
+  "security": {
+    "focus": [
+      {
+        "title": "Vulnerability Analysis",
+        "icon": "🔍",
+        "color": "#ef4444",
+        "description": "Systematic identification and assessment of security weaknesses across web applications using both manual testing and automated tooling.",
+        "skills": ["OWASP Top 10", "CVE Analysis", "CVSS Scoring", "Burp Suite", "Nikto", "SAST / DAST"]
+      },
+      {
+        "title": "Application Security",
+        "icon": "🛡️",
+        "color": "#f97316",
+        "description": "Securing software at every layer of the stack — from secure code review and threat modelling to auth hardening and security-aware CI/CD.",
+        "skills": ["Secure Code Review", "Threat Modelling", "Auth Hardening", "Security Headers", "CSP / HSTS", "Secrets Management"]
+      },
+      {
+        "title": "Penetration Testing",
+        "icon": "⚔️",
+        "color": "#a78bfa",
+        "description": "Simulating real-world attacks on web applications to find exploitable weaknesses before malicious actors can — covering injection, broken auth, IDOR, and more.",
+        "skills": ["SQLi / XSS / CSRF", "IDOR Testing", "Broken Access Control", "Session Hijacking", "API Security", "Recon & Enumeration"]
+      },
+      {
+        "title": "Secure Development",
+        "icon": "🔒",
+        "color": "#4f8ef7",
+        "description": "Embedding security into the development lifecycle: integrating SAST in pipelines, enforcing dependency audits, and applying security-first architecture decisions.",
+        "skills": ["SAST in CI/CD", "Dependency Audits", "Input Validation", "RBAC Design", "JWT Hardening", "OAuth2 / OpenID"]
+      }
+    ],
+    "owasp": [
+      { "code": "A01", "name": "Broken Access Control", "covered": true },
+      { "code": "A02", "name": "Cryptographic Failures", "covered": true },
+      { "code": "A03", "name": "Injection (SQLi / XSS)", "covered": true },
+      { "code": "A04", "name": "Insecure Design", "covered": true },
+      { "code": "A05", "name": "Security Misconfiguration", "covered": true },
+      { "code": "A06", "name": "Vulnerable Components", "covered": true },
+      { "code": "A07", "name": "Auth & Session Failures", "covered": true },
+      { "code": "A08", "name": "Software Integrity Failures", "covered": false },
+      { "code": "A09", "name": "Security Logging Failures", "covered": true },
+      { "code": "A10", "name": "Server-Side Request Forgery", "covered": true }
+    ],
+    "stats": [
+      { "value": "40%", "label": "Vulns. reduced", "icon": "📉" },
+      { "value": "OWASP", "label": "Top 10 coverage", "icon": "✅" },
+      { "value": "SAST", "label": "CI/CD integrated", "icon": "🔗" },
+      { "value": "CVSS", "label": "Severity scoring", "icon": "📊" }
+    ]
+  }
+}
