@@ -1,6 +1,22 @@
-import rateLimit, { ipKeyGenerator } from "express-rate-limit";
+import rateLimitImport, {
+  ipKeyGenerator,
+  type Options,
+  type RateLimitRequestHandler,
+} from "express-rate-limit";
 import type { Request, Response } from "express";
 import { ERROR_CODES } from "../lib/errors.js";
+
+type RateLimitFn = (options?: Partial<Options>) => RateLimitRequestHandler;
+
+// Under NodeNext the default import can be typed as a namespace object. At
+// runtime it is either the function or { default: function }.
+const rateLimitModule = rateLimitImport as unknown as
+  | RateLimitFn
+  | { default: RateLimitFn };
+const rateLimit: RateLimitFn =
+  typeof rateLimitModule === "function"
+    ? rateLimitModule
+    : rateLimitModule.default;
 
 type LimiterOptions = {
   windowMs: number;
@@ -23,7 +39,7 @@ export const createLimiter = ({
   limit,
   keyGenerator,
   skipSuccessfulRequests,
-}: LimiterOptions) =>
+}: LimiterOptions): RateLimitRequestHandler =>
   rateLimit({
     windowMs,
     limit,

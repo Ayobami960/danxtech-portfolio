@@ -5,15 +5,10 @@
   "description": "REST API for Adetoye Daniel Kehinde's portfolio and private admin",
   "type": "module",
   "main": "dist/src/server.js",
-  "engines": {
-    "node": ">=20"
-  },
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/src/server.js",
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit",
     "db:push": "drizzle-kit push",

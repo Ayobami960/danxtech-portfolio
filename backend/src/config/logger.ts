@@ -1,4 +1,4 @@
-import pino from "pino";
+import { pino } from "pino";
 import { env } from "./env.js";
 import { SERVICE_NAME } from "./constants.js";
 
