@@ -187,7 +187,7 @@ export const runStorageIntegrityCheck =
     });
 
     const report: StorageIntegrityReport = {
-      driver: env.storage.driver,
+      driver: getStorage().name,
       checked: refs.length,
       ok: refs.length - missing.length - unknown.length,
       missing,
@@ -231,7 +231,7 @@ export const runStorageIntegrityCheck =
  * awaited, so a slow or failing storage provider cannot delay or crash boot.
  */
 export const scheduleStorageIntegrityCheck = (): void => {
-  if (!env.storageIntegrityCheck || env.storage.driver !== "imagekit") return;
+  if (!env.storageIntegrityCheck) return;
 
   void runStorageIntegrityCheck().catch((error: unknown) => {
     logger.error({ err: error }, "Storage integrity check failed to run");

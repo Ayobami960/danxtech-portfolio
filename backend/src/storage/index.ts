@@ -1,44 +1,31 @@
 import { env } from "../config/env.js";
 import { ImageKitStorage } from "./imagekit.storage.js";
-import { LocalStorageDriver } from "./local.js";
-import { S3StorageDriver } from "./s3.js";
 import type { StorageDriver } from "./types.js";
 
-let driver: StorageDriver | undefined;
+let driver: ImageKitStorage | undefined;
 
-const createDriver = (): StorageDriver => {
-  if (env.storage.driver === "imagekit" && env.storage.imagekit) {
-    return new ImageKitStorage(env.storage.imagekit);
-  }
-
-  if (env.storage.driver === "s3" && env.storage.s3) {
-    return new S3StorageDriver(env.storage.s3);
-  }
-
-  return new LocalStorageDriver(
-    env.storage.localDir,
-    env.storage.publicMediaBaseUrl,
+/**
+ * ImageKit is the only media storage provider: `config/env.ts` refuses to boot
+ * without its three variables, so this is a guard for anything that runs before
+ * the environment is fully loaded, not a fallback to another driver.
+ */
+export const isStorageConfigured = (): boolean =>
+  Boolean(
+    env.storage.publicKey && env.storage.privateKey && env.storage.urlEndpoint,
   );
-};
 
-export const getStorage = (): StorageDriver => {
-  driver ??= createDriver();
+export const getStorage = (): ImageKitStorage => {
+  driver ??= new ImageKitStorage(env.storage);
   return driver;
 };
 
-/**
- * ImageKit-specific helpers (folder listings) for the storage integrity check.
- * Returns undefined for every other driver, so callers stay driver-agnostic.
- */
-export const getImageKitStorage = (): ImageKitStorage | undefined => {
-  const storage = getStorage();
-  return storage instanceof ImageKitStorage ? storage : undefined;
-};
+/** ImageKit-specific helpers (folder listings) for the storage integrity check. */
+export const getImageKitStorage = (): ImageKitStorage => getStorage();
 
 /**
  * Single source of truth for every media URL returned by the API. The stored
- * key is resolved through the active driver, so the base is always the
- * configured endpoint (IMAGEKIT_URL_ENDPOINT) and never a URL frozen into a row.
+ * key is resolved through the driver, so the base is always the configured
+ * endpoint (IMAGEKIT_URL_ENDPOINT) and never a URL frozen into a row.
  * Seed assets carry no key (or an "external/" key) and are served by the
  * public site, so their stored path is returned unchanged.
  */
@@ -69,7 +56,7 @@ export const deleteStoredFile = async (target: {
   }
 };
 
-/** Only used by tests to point the driver at a fresh directory. */
+/** Only used by tests to point the driver at fresh credentials. */
 export const resetStorage = (): void => {
   driver = undefined;
 };

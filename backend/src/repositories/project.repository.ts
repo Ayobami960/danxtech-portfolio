@@ -133,6 +133,18 @@ export const deleteProject = async (id: string): Promise<void> => {
   await db.delete(projects).where(eq(projects.id, id));
 };
 
+/** A project currently pointing at this document, if any. */
+export const findProjectByDocumentFileId = async (
+  fileId: string,
+): Promise<{ id: string; slug: string } | null> => {
+  const rows = await db
+    .select({ id: projects.id, slug: projects.slug })
+    .from(projects)
+    .where(eq(projects.documentFileId, fileId))
+    .limit(1);
+  return rows[0] ?? null;
+};
+
 export const maxProjectSortOrder = async (): Promise<number> => {
   const rows = await db
     .select({ value: sql<number | null>`max(${projects.sortOrder})` })

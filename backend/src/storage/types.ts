@@ -7,21 +7,18 @@ export type StoredFile = {
   /** Full public URL to display. */
   url: string;
   /**
-   * Provider-side id used to delete the file without a lookup. Only ImageKit
-   * exposes one, so this is null for the local and S3 drivers.
+   * ImageKit's fileId, used to delete the object without a lookup. Null only
+   * for rows written before it was stored.
    */
   fileId: string | null;
 };
 
 export interface StorageDriver {
-  readonly name: "local" | "s3" | "imagekit";
+  readonly name: "imagekit";
   put(key: string, buffer: Buffer, contentType: string): Promise<StoredFile>;
   getStream(key: string): Promise<Readable>;
   delete(key: string): Promise<void>;
-  /**
-   * Delete using the fileId captured at upload time. Only ImageKit implements
-   * this; the other drivers throw instead of silently doing nothing.
-   */
+  /** Delete using the fileId captured at upload time. */
   deleteById(fileId: string): Promise<void>;
   publicUrl(key: string): string;
 }

@@ -67,6 +67,25 @@ export type ProjectImage = {
   sortOrder: number;
 };
 
+/** Metadata of a PDF uploaded through `POST /admin/documents`. */
+export type UploadedDocument = {
+  fileId: string | null;
+  key: string;
+  url: string;
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+};
+
+/** The subset stored on a project. */
+export type ProjectDocument = {
+  url: string;
+  fileId: string | null;
+  key: string;
+  name: string;
+  sizeBytes: number;
+};
+
 export type Project = {
   id: string;
   slug: string;
@@ -79,6 +98,7 @@ export type Project = {
   liveUrl: string | null;
   githubUrl: string | null;
   coverImage: string | null;
+  document: ProjectDocument | null;
   featured: boolean;
   published: boolean;
   sortOrder: number;
@@ -96,6 +116,8 @@ export type ProjectInput = {
   stats: string[];
   liveUrl: string | null;
   githubUrl: string | null;
+  /** `null` removes the attached PDF; omitted leaves it untouched. */
+  document?: ProjectDocument | null;
 };
 
 export type SkillGroup = {

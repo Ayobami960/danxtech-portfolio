@@ -1,5 +1,13 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowLeft, ExternalLink, Save, Trash2, Upload, X } from "lucide-react";
+import {
+  ArrowLeft,
+  ExternalLink,
+  FileText,
+  Save,
+  Trash2,
+  Upload,
+  X,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -10,8 +18,11 @@ import {
   useGetProjectQuery,
   useReorderGalleryMutation,
   useUpdateProjectMutation,
+  useUploadDocumentMutation,
+  useDeleteDocumentMutation,
 } from "../../api/adminApi";
 import { errorMessage, getFieldErrors } from "../../api/errors";
+import type { UploadedDocument } from "../../api/types";
 import { resolveMediaUrl } from "../../app/config";
 import { useAppDispatch, useAppSelector } from "../../app/hooks";
 import { Card } from "../../components/Card";
@@ -22,13 +33,21 @@ import { SortableList } from "../../components/SortableList";
 import { ErrorState, LoadingList } from "../../components/States";
 import { projectSchema, type ProjectForm } from "../../lib/schemas";
 import { useUnsavedWarning } from "../../lib/useUnsavedWarning";
-import { ACCEPT_IMAGES } from "../uploads/accept";
+import { ACCEPT_IMAGES, ACCEPT_PDF } from "../uploads/accept";
 import { FileDropzone } from "../uploads/FileDropzone";
+import { readDataUrl } from "../uploads/readDataUrl";
 import { cancelUpload, uploadFile } from "../uploads/uploadFile";
 import { uploadsSelectors } from "../uploads/uploadsSlice";
 
 /** Matches MAX_IMAGE_BYTES in the API: larger files are rejected with a 413. */
 const IMAGE_UPLOAD_MAX_BYTES = 4 * 1024 * 1024;
+/** Matches MAX_DOCUMENT_BYTES in the API (base64 JSON adds ~33%). */
+const DOCUMENT_MAX_BYTES = 3 * 1024 * 1024;
+
+const formatBytes = (bytes: number): string =>
+  bytes >= 1024 * 1024
+    ? `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+    : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
 const DEFAULT_VALUES: ProjectForm = {
   title: "",
@@ -52,7 +71,11 @@ export default function ProjectEditorPage() {
   const [update, updateState] = useUpdateProjectMutation();
   const [reorderGallery] = useReorderGalleryMutation();
   const [deleteImage] = useDeleteGalleryImageMutation();
+  const [uploadDocument] = useUploadDocumentMutation();
+  const [deleteDocument] = useDeleteDocumentMutation();
   const [removingImage, setRemovingImage] = useState<string | null>(null);
+  const [uploadingDocument, setUploadingDocument] = useState(false);
+  const [removingDocument, setRemovingDocument] = useState(false);
   const uploads = useAppSelector((state) => uploadsSelectors.selectAll(state.uploads));
 
   const form = useForm<ProjectForm>({
@@ -102,6 +125,45 @@ export default function ProjectEditorPage() {
       toast.error(errorMessage(error, "Could not save the project."));
     }
   });
+
+  /**
+   * Two calls by design: the PDF goes to the base64 document endpoint, then its
+   * metadata is attached to the project. The API rejects a document URL that
+   * does not belong to the configured storage endpoint.
+   */
+  const attachDocument = async (file: File): Promise<void> => {
+    if (!id) return;
+    setUploadingDocument(true);
+    let stored: UploadedDocument | null = null;
+    try {
+      const dataUrl = await readDataUrl(file);
+      stored = await uploadDocument({ fileName: file.name, dataUrl }).unwrap();
+      await update({
+        id,
+        patch: {
+          document: {
+            url: stored.url,
+            fileId: stored.fileId,
+            key: stored.key,
+            name: stored.name,
+            sizeBytes: stored.sizeBytes,
+          },
+        },
+      }).unwrap();
+      toast.success("PDF attached to the project");
+    } catch (error) {
+      // The upload can succeed while attaching it fails: remove the orphan so it
+      // does not stay in ImageKit. Best-effort; the original error is the one shown.
+      if (stored?.fileId) {
+        await deleteDocument({ fileId: stored.fileId, key: stored.key })
+          .unwrap()
+          .catch(() => undefined);
+      }
+      toast.error(errorMessage(error, "Could not upload the PDF."));
+    } finally {
+      setUploadingDocument(false);
+    }
+  };
 
   if (!isNew && project.isLoading) return <LoadingList rows={6} />;
   if (!isNew && project.error)
@@ -330,6 +392,61 @@ export default function ProjectEditorPage() {
                 ))}
               </Card>
 
+              <Card title="project_document">
+                {project.data?.document ? (
+                  <div className="mb-3 flex items-center gap-3 rounded-lg border border-white/10 p-3">
+                    <FileText size={18} className="shrink-0 text-[#3b82f6]" />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm text-[#cbd8e8]">
+                        {project.data.document.name}
+                      </p>
+                      <p className="font-mono text-[10px] text-[#5f7189]">
+                        {formatBytes(project.data.document.sizeBytes)}
+                      </p>
+                    </div>
+                    <a
+                      href={project.data.document.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="btn btn-ghost ml-auto !px-2"
+                      aria-label="Open document"
+                    >
+                      <ExternalLink size={14} />
+                    </a>
+                    <button
+                      type="button"
+                      className="rounded p-1 text-[#7c8fa6] hover:bg-red-500/10 hover:text-red-300"
+                      aria-label="Remove document"
+                      onClick={() => setRemovingDocument(true)}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ) : (
+                  <p className="mb-3 text-xs text-[#5f7189]">
+                    No PDF attached. Link a case study or one-pager to this project.
+                  </p>
+                )}
+                <FileDropzone
+                  accept={ACCEPT_PDF}
+                  maxSizeBytes={DOCUMENT_MAX_BYTES}
+                  label={
+                    project.data?.document
+                      ? "Drop a replacement PDF (max 3 MB)"
+                      : "Drop a project PDF (max 3 MB)"
+                  }
+                  hint="Replacing the document removes the previous file."
+                  disabled={uploadingDocument}
+                  onFiles={(files) => {
+                    const file = files[0];
+                    if (file) void attachDocument(file);
+                  }}
+                />
+                {uploadingDocument ? (
+                  <p className="mt-2 text-[11px] text-[#9db0c6]">Uploading…</p>
+                ) : null}
+              </Card>
+
               <Card title={`gallery_${gallery.length}/10`}>
                 <FileDropzone
                   accept={ACCEPT_IMAGES}
@@ -416,7 +533,7 @@ export default function ProjectEditorPage() {
             <Card title="uploads">
               <p className="text-sm text-[#7c8fa6]">
                 <Upload size={14} className="mr-1 inline" />
-                Save the project first, then cover and gallery uploads become available.
+                Save the project first, then cover, PDF and gallery uploads become available.
               </p>
             </Card>
           )}
@@ -495,6 +612,23 @@ export default function ProjectEditorPage() {
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={removingDocument}
+        title="Remove the project PDF?"
+        description="The file is removed from storage and cannot be recovered."
+        onClose={() => setRemovingDocument(false)}
+        onConfirm={() => {
+          if (!id) return;
+          void update({ id, patch: { document: null } })
+            .unwrap()
+            .then(() => {
+              setRemovingDocument(false);
+              toast.success("Document removed");
+            })
+            .catch((error: unknown) => toast.error(errorMessage(error)));
+        }}
+      />
 
       <ConfirmDialog
         open={Boolean(removingImage)}

@@ -61,16 +61,15 @@ services:
       SMTP_PASS: ${SMTP_PASS:-}
       MAIL_FROM: ${MAIL_FROM:-}
 
-      STORAGE_DRIVER: local
-      STORAGE_LOCAL_DIR: /app/storage
-      PUBLIC_MEDIA_BASE_URL: ${PUBLIC_MEDIA_BASE_URL:-http://localhost:8080}
+      # ImageKit is the only storage provider: these must be a real account.
+      IMAGEKIT_PUBLIC_KEY: ${IMAGEKIT_PUBLIC_KEY:-}
+      IMAGEKIT_PRIVATE_KEY: ${IMAGEKIT_PRIVATE_KEY:-}
+      IMAGEKIT_URL_ENDPOINT: ${IMAGEKIT_URL_ENDPOINT:-}
 
       RESUME_DOWNLOAD_NAME: ${RESUME_DOWNLOAD_NAME:-Adetoye-Daniel-Kehinde-Resume.pdf}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     ports:
       - "8080:8080"
-    volumes:
-      - storage_data:/app/storage
     command:
       - sh
       - -c
@@ -78,4 +77,3 @@ services:
 
 volumes:
   postgres_data:
-  storage_data:

@@ -23,6 +23,7 @@ import type {
   SkillGroup,
   Stats,
   TwoFactorStatus,
+  UploadedDocument,
 } from "./types";
 import { onRealtime } from "../realtime/socket";
 
@@ -432,6 +433,22 @@ export const adminApi = createApi({
       ],
     }),
 
+    /** Base64 JSON upload of a project PDF (max 3 MB decoded). */
+    uploadDocument: build.mutation<
+      UploadedDocument,
+      { fileName: string; dataUrl: string }
+    >({
+      query: (body) => ({ url: "/admin/documents", method: "POST", body }),
+    }),
+    /** Remove an upload that was never attached to a project. */
+    deleteDocument: build.mutation<void, { fileId: string; key: string }>({
+      query: ({ fileId, key }) => ({
+        url: `/admin/documents/${encodeURIComponent(fileId)}`,
+        method: "DELETE",
+        params: { key },
+      }),
+    }),
+
     /* ---------------------------------- resume ----------------------------------- */
     getResume: build.query<ResumeInfo | null, void>({
       query: () => "/admin/resume",
@@ -771,6 +788,8 @@ export const {
   useReorderProjectsMutation,
   useReorderGalleryMutation,
   useDeleteGalleryImageMutation,
+  useUploadDocumentMutation,
+  useDeleteDocumentMutation,
   useGetResumeQuery,
   useDeleteResumeMutation,
   useGetConversationsQuery,

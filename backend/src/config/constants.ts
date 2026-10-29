@@ -33,6 +33,19 @@ export const MAX_IMAGE_REQUEST_BYTES = 4.5 * 1024 * 1024;
 export const MAX_RESUME_BYTES = 25 * 1024 * 1024;
 export const MAX_GALLERY_IMAGES = 10;
 export const MAX_CHAT_IMAGE_BYTES = 10 * 1024 * 1024;
+/**
+ * Base64 JSON document uploads (`POST /api/v1/admin/documents`). Base64 inflates
+ * a payload by ~33%, so the decoded limit stays well inside Vercel's ~4.5 MB
+ * request-body cap: 3 MB decodes to ~4.0 MB of base64 plus the JSON envelope.
+ */
+export const MAX_DOCUMENT_BYTES = 3 * 1024 * 1024;
+/**
+ * JSON parser limit for the document route only (100 kB everywhere else).
+ * Sized just above the base64 encoding of MAX_DOCUMENT_BYTES (~4.19 MB) so the
+ * decoded-size check, not a generic parser error, explains the 3 MB limit,
+ * while staying under Vercel's ~4.5 MB request cap.
+ */
+export const MAX_DOCUMENT_JSON_LIMIT = 4_300_000;
 
 /** Public display name used in chat UI and emails. */
 export const CHAT_OWNER_NAME = "Adetoye Daniel Kehinde";

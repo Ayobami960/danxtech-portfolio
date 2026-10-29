@@ -1,6 +1,5 @@
 import "dotenv/config";
 import { eq } from "drizzle-orm";
-import { env } from "../src/config/env.js";
 import { closeDatabase, db } from "../src/db/client.js";
 import { projects } from "../src/database/schema.js";
 import { findProjectBySlug } from "../src/repositories/project.repository.js";
@@ -93,14 +92,6 @@ const listProjectFiles = async (projectId: string): Promise<string[] | null> => 
 
 const main = async (): Promise<void> => {
   const args = parseArgs(process.argv.slice(2));
-
-  if (env.storage.driver !== "imagekit") {
-    console.error(
-      `This script needs STORAGE_DRIVER=imagekit (current: ${env.storage.driver}).`,
-    );
-    process.exitCode = 1;
-    return;
-  }
 
   const project = await findProjectBySlug(args.slug);
   if (!project) {

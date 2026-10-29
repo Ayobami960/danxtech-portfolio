@@ -226,6 +226,13 @@ export const projects = pgTable("projects", {
   coverMimeType: varchar("cover_mime_type", { length: 100 }),
   coverSizeBytes: integer("cover_size_bytes"),
   coverSha256: varchar("cover_sha256", { length: 64 }),
+  /** Optional PDF (case study) attached to the project. */
+  documentUrl: text("document_url"),
+  /** ImageKit fileId for documentUrl; needed to delete it without a lookup. */
+  documentFileId: text("document_file_id"),
+  documentStorageKey: text("document_storage_key"),
+  documentName: varchar("document_name", { length: 255 }),
+  documentSizeBytes: integer("document_size_bytes"),
   featured: boolean("featured").notNull().default(false),
   published: boolean("published").notNull().default(false),
   sortOrder: integer("sort_order").notNull().default(0),

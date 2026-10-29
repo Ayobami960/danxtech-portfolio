@@ -1,5 +1,4 @@
 import "dotenv/config";
-import { env } from "../src/config/env.js";
 import { closeDatabase } from "../src/db/client.js";
 import { runStorageIntegrityCheck } from "../src/services/storage-integrity.service.js";
 
@@ -8,14 +7,6 @@ import { runStorageIntegrityCheck } from "../src/services/storage-integrity.serv
  * not present in image storage. Safe to run at any time (read-only).
  */
 const main = async (): Promise<void> => {
-  if (env.storage.driver !== "imagekit") {
-    console.error(
-      `storage:check needs STORAGE_DRIVER=imagekit (current: ${env.storage.driver}).`,
-    );
-    process.exitCode = 1;
-    return;
-  }
-
   const report = await runStorageIntegrityCheck();
 
   console.log(

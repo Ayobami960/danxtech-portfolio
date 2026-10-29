@@ -7,6 +7,7 @@ import { startChatHousekeeping } from "./jobs/chat-housekeeping.js";
 import { attachChatGateway, closeChatGateway } from "./realtime/gateway.js";
 import { initializeMailer } from "./services/mailer.js";
 import { scheduleStorageIntegrityCheck } from "./services/storage-integrity.service.js";
+import { getStorage } from "./storage/index.js";
 
 const SHUTDOWN_TIMEOUT_MS = 10_000;
 
@@ -19,7 +20,7 @@ const SHUTDOWN_TIMEOUT_MS = 10_000;
 const start = async (): Promise<void> => {
   const server = app.listen(env.port, () => {
     logger.info(
-      { port: env.port, nodeEnv: env.nodeEnv, storage: env.storage.driver },
+      { port: env.port, nodeEnv: env.nodeEnv, storage: getStorage().name },
       "Portfolio API listening",
     );
   });

@@ -1,4 +1,8 @@
-import express, { type Express, type RequestHandler } from "express";
+import express, {
+  type Express,
+  type Request,
+  type RequestHandler,
+} from "express";
 import compression from "compression";
 import cookieParser from "cookie-parser";
 import cors from "cors";
@@ -13,15 +17,13 @@ import { errorHandler } from "./middleware/error.js";
 import { notFoundHandler } from "./middleware/not-found.js";
 import { requestContext } from "./middleware/request-context.js";
 import { apiRouter } from "./routes/index.js";
-import { createMediaRouter } from "./routes/media.routes.js";
 
 type HelmetFn = (options?: Record<string, unknown>) => RequestHandler;
 
 // Older helmet typings make the default import look like a namespace under
 // NodeNext. At runtime it is either the function or { default: function }.
 const helmetModule = helmetImport as unknown as
-  | HelmetFn
-  | { default: HelmetFn };
+  HelmetFn | { default: HelmetFn };
 const helmet: HelmetFn =
   typeof helmetModule === "function" ? helmetModule : helmetModule.default;
 
@@ -40,6 +42,8 @@ const corsOrigin = (
   }
   callback(null, env.frontendOrigins.includes(origin));
 };
+
+const DOCUMENT_UPLOAD_PATH = `${API_PREFIX}/admin/documents`;
 
 export const createApp = (): Express => {
   const app = express();
@@ -78,17 +82,25 @@ export const createApp = (): Express => {
       // EventSource must not be gzipped: compression buffers, which stops
       // events and heartbeats from reaching the browser.
       filter: (request, response) =>
-        request.path !== "/api/events" &&
-        compression.filter(request, response),
+        request.path !== "/api/events" && compression.filter(request, response),
     }),
   );
   app.use(cookieParser());
-  app.use(express.json({ limit: "100kb" }));
-
-  // Local development only: the S3 driver serves images from the CDN instead.
-  if (env.storage.driver === "local") {
-    app.use("/media", createMediaRouter(env.storage.localDir));
-  }
+  app.use(
+    express.json({
+      limit: "100kb",
+      // The base64 document upload installs its own, larger parser; skipping it
+      // here is what lets that route accept a payload above 100 kB. body-parser
+      // types this callback as IncomingMessage, hence the cast.
+      type: (incoming) => {
+        const request = incoming as unknown as Request;
+        return (
+          request.path !== DOCUMENT_UPLOAD_PATH &&
+          Boolean(request.is("application/json"))
+        );
+      },
+    }),
+  );
 
   // Connection check: open http://localhost:8000 in the browser.
   app.get("/", (_req, res) => {
@@ -117,7 +129,6 @@ export const createApp = (): Express => {
 
   return app;
 };
-
 
 const app = createApp();
 

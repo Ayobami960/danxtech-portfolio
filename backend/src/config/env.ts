@@ -114,19 +114,10 @@ const schema = z
 
     TURNSTILE_SECRET: optionalString,
 
-    STORAGE_DRIVER: z.enum(["local", "s3", "imagekit"]).default("local"),
     /** Report database keys whose files are missing from ImageKit at boot. */
     STORAGE_INTEGRITY_CHECK: booleanString,
-    STORAGE_LOCAL_DIR: z.string().default("./storage"),
-    PUBLIC_MEDIA_BASE_URL: optionalString,
-    S3_ENDPOINT: z.url().optional(),
-    S3_REGION: optionalString,
-    S3_BUCKET: optionalString,
-    S3_ACCESS_KEY_ID: optionalString,
-    S3_SECRET_ACCESS_KEY: optionalString,
-    S3_PUBLIC_BASE_URL: z.url().optional(),
-    S3_FORCE_PATH_STYLE: booleanString.default(false),
 
+    /** ImageKit is the only media storage provider (see storage/index.ts). */
     IMAGEKIT_PUBLIC_KEY: optionalString,
     IMAGEKIT_PRIVATE_KEY: optionalString,
     /** Delivery endpoint: https://ik.imagekit.io/<imagekit_id>. */
@@ -150,106 +141,64 @@ const schema = z
       });
     }
 
-    if (value.STORAGE_DRIVER === "s3") {
-      const required = [
-        "S3_ENDPOINT",
-        "S3_REGION",
-        "S3_BUCKET",
-        "S3_ACCESS_KEY_ID",
-        "S3_SECRET_ACCESS_KEY",
-        "S3_PUBLIC_BASE_URL",
-      ] as const;
-      for (const key of required) {
-        if (!value[key]) {
-          ctx.addIssue({
-            code: "custom",
-            path: [key],
-            message: `${key} is required when STORAGE_DRIVER=s3.`,
-          });
-        }
-      }
-    }
+    const urlEndpoint = value.IMAGEKIT_URL_ENDPOINT ?? value.IMAGEKIT_END_POINT;
+    const missingStorage: string[] = [];
+    if (!value.IMAGEKIT_PUBLIC_KEY) missingStorage.push("IMAGEKIT_PUBLIC_KEY");
+    if (!value.IMAGEKIT_PRIVATE_KEY) missingStorage.push("IMAGEKIT_PRIVATE_KEY");
+    if (!urlEndpoint) missingStorage.push("IMAGEKIT_URL_ENDPOINT");
 
-    if (value.NODE_ENV === "production" && value.STORAGE_DRIVER === "local") {
+    // ImageKit is the only storage provider, so a missing value is fatal rather
+    // than a silent fall back to a disk that does not survive an invocation.
+    if (missingStorage.length > 0) {
       ctx.addIssue({
         code: "custom",
-        path: ["STORAGE_DRIVER"],
-        message:
-          "STORAGE_DRIVER=local writes to the disk of the running machine, which is read-only (or wiped between requests) on serverless hosts such as Vercel. Set STORAGE_DRIVER=imagekit in production.",
+        path: ["IMAGEKIT_PRIVATE_KEY"],
+        message: `ImageKit is the only media storage provider. Missing: ${missingStorage.join(", ")}.`,
       });
     }
 
-    if (value.STORAGE_DRIVER === "imagekit") {
-      const urlEndpoint =
-        value.IMAGEKIT_URL_ENDPOINT ?? value.IMAGEKIT_END_POINT;
-      if (!value.IMAGEKIT_PUBLIC_KEY) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["IMAGEKIT_PUBLIC_KEY"],
-          message:
-            "IMAGEKIT_PUBLIC_KEY is required when STORAGE_DRIVER=imagekit (the ImageKit client requires it).",
-        });
-      }
-      if (!value.IMAGEKIT_PRIVATE_KEY) {
+    // A swap between the two keys is otherwise silent: the SDK constructor
+    // accepts both, and only the private key authenticates an upload, so the
+    // first image simply failed with a generic storage error.
+    const publicKey = value.IMAGEKIT_PUBLIC_KEY;
+    const privateKey = value.IMAGEKIT_PRIVATE_KEY;
+    if (publicKey && privateKey) {
+      if (publicKey === privateKey) {
         ctx.addIssue({
           code: "custom",
           path: ["IMAGEKIT_PRIVATE_KEY"],
           message:
-            "IMAGEKIT_PRIVATE_KEY is required when STORAGE_DRIVER=imagekit.",
+            "IMAGEKIT_PUBLIC_KEY and IMAGEKIT_PRIVATE_KEY hold the same value; they are two different keys in the ImageKit dashboard.",
+        });
+      } else if (
+        publicKey.startsWith("private_") ||
+        privateKey.startsWith("public_")
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["IMAGEKIT_PRIVATE_KEY"],
+          message:
+            "The ImageKit keys look swapped: IMAGEKIT_PUBLIC_KEY must hold the public key (public_…) and IMAGEKIT_PRIVATE_KEY the private key (private_…).",
         });
       }
-      if (!urlEndpoint) {
+    }
+
+    // The bare marketing host is not a delivery endpoint: every URL built
+    // from it 404s. A custom domain on the account is still accepted.
+    if (urlEndpoint) {
+      let host: string;
+      try {
+        host = new URL(urlEndpoint).hostname.toLowerCase();
+      } catch {
+        host = "";
+      }
+      if (host === "imagekit.io" || host === "www.imagekit.io") {
         ctx.addIssue({
           code: "custom",
           path: ["IMAGEKIT_URL_ENDPOINT"],
           message:
-            "IMAGEKIT_URL_ENDPOINT is required when STORAGE_DRIVER=imagekit (https://ik.imagekit.io/<imagekit_id>).",
+            "IMAGEKIT_URL_ENDPOINT must be your ImageKit URL endpoint (https://ik.imagekit.io/<imagekit_id>), not the ImageKit website, otherwise uploaded images are not reachable.",
         });
-      }
-
-      // A swap between the two keys is otherwise silent: the SDK constructor
-      // accepts both, and only the private key authenticates an upload, so the
-      // first image simply failed with a generic storage error.
-      const publicKey = value.IMAGEKIT_PUBLIC_KEY;
-      const privateKey = value.IMAGEKIT_PRIVATE_KEY;
-      if (publicKey && privateKey) {
-        if (publicKey === privateKey) {
-          ctx.addIssue({
-            code: "custom",
-            path: ["IMAGEKIT_PRIVATE_KEY"],
-            message:
-              "IMAGEKIT_PUBLIC_KEY and IMAGEKIT_PRIVATE_KEY hold the same value; they are two different keys in the ImageKit dashboard.",
-          });
-        } else if (
-          publicKey.startsWith("private_") ||
-          privateKey.startsWith("public_")
-        ) {
-          ctx.addIssue({
-            code: "custom",
-            path: ["IMAGEKIT_PRIVATE_KEY"],
-            message:
-              "The ImageKit keys look swapped: IMAGEKIT_PUBLIC_KEY must hold the public key (public_…) and IMAGEKIT_PRIVATE_KEY the private key (private_…).",
-          });
-        }
-      }
-
-      // The bare marketing host is not a delivery endpoint: every URL built
-      // from it 404s. A custom domain on the account is still accepted.
-      if (urlEndpoint) {
-        let host: string;
-        try {
-          host = new URL(urlEndpoint).hostname.toLowerCase();
-        } catch {
-          host = "";
-        }
-        if (host === "imagekit.io" || host === "www.imagekit.io") {
-          ctx.addIssue({
-            code: "custom",
-            path: ["IMAGEKIT_URL_ENDPOINT"],
-            message:
-              "IMAGEKIT_URL_ENDPOINT must be your ImageKit URL endpoint (https://ik.imagekit.io/<imagekit_id>), not the ImageKit website, otherwise uploaded images are not reachable.",
-          });
-        }
       }
     }
 
@@ -304,29 +253,12 @@ export type AppEnv = Readonly<{
   turnstileSecret: string | undefined;
   /** Defaults to true, except under NODE_ENV=test. */
   storageIntegrityCheck: boolean;
+  /** ImageKit is the only media storage provider. */
   storage: {
-    driver: "local" | "s3" | "imagekit";
-    localDir: string;
-    publicMediaBaseUrl: string | undefined;
-    s3:
-      | {
-          endpoint: string;
-          region: string;
-          bucket: string;
-          accessKeyId: string;
-          secretAccessKey: string;
-          publicBaseUrl: string;
-          forcePathStyle: boolean;
-        }
-      | undefined;
-    imagekit:
-      | {
-          /** The SDK constructor requires it; server-side uploads only use the private key. */
-          publicKey: string;
-          privateKey: string;
-          urlEndpoint: string;
-        }
-      | undefined;
+    /** The SDK constructor requires it; server-side uploads only use the private key. */
+    publicKey: string;
+    privateKey: string;
+    urlEndpoint: string;
   };
   resumeDownloadName: string;
   logLevel: "fatal" | "error" | "warn" | "info" | "debug" | "trace" | "silent";
@@ -428,30 +360,10 @@ const loadEnv = (): AppEnv => {
     storageIntegrityCheck:
       value.STORAGE_INTEGRITY_CHECK ?? value.NODE_ENV !== "test",
     storage: {
-      driver: value.STORAGE_DRIVER,
-      localDir: value.STORAGE_LOCAL_DIR,
-      publicMediaBaseUrl: value.PUBLIC_MEDIA_BASE_URL,
-      s3:
-        value.STORAGE_DRIVER === "s3"
-          ? {
-              endpoint: value.S3_ENDPOINT as string,
-              region: value.S3_REGION as string,
-              bucket: value.S3_BUCKET as string,
-              accessKeyId: value.S3_ACCESS_KEY_ID as string,
-              secretAccessKey: value.S3_SECRET_ACCESS_KEY as string,
-              publicBaseUrl: value.S3_PUBLIC_BASE_URL as string,
-              forcePathStyle: value.S3_FORCE_PATH_STYLE ?? false,
-            }
-          : undefined,
-      imagekit:
-        value.STORAGE_DRIVER === "imagekit"
-          ? {
-              publicKey: value.IMAGEKIT_PUBLIC_KEY as string,
-              privateKey: value.IMAGEKIT_PRIVATE_KEY as string,
-              urlEndpoint: (value.IMAGEKIT_URL_ENDPOINT ??
-                value.IMAGEKIT_END_POINT) as string,
-            }
-          : undefined,
+      publicKey: value.IMAGEKIT_PUBLIC_KEY as string,
+      privateKey: value.IMAGEKIT_PRIVATE_KEY as string,
+      urlEndpoint: (value.IMAGEKIT_URL_ENDPOINT ??
+        value.IMAGEKIT_END_POINT) as string,
     },
     resumeDownloadName: value.RESUME_DOWNLOAD_NAME,
     logLevel: value.LOG_LEVEL,

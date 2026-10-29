@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { AppError, ERROR_CODES, conflict, notFound } from "../lib/errors.js";
 import { slugify } from "../lib/slug.js";
 import { logger } from "../config/logger.js";
+import { env } from "../config/env.js";
 import { REVALIDATE_TAGS } from "../config/constants.js";
 import {
   addProjectImages,
@@ -49,9 +50,46 @@ export type PublicProject = {
   stats: string[];
   liveUrl: string | null;
   githubUrl: string | null;
+  /** Optional PDF case study attached to the project. */
+  documentUrl: string | null;
+  documentName: string | null;
   imageParent: string | null;
   imageBox: string[];
   featured: boolean;
+};
+
+type ProjectDocumentInput = NonNullable<CreateProjectInput["document"]>;
+
+/**
+ * The document endpoint is the only supported source for a project PDF: the
+ * admin uploads there first, then attaches the metadata it returned.
+ */
+const documentColumns = (
+  document: ProjectDocumentInput,
+): Pick<
+  Project,
+  | "documentUrl"
+  | "documentFileId"
+  | "documentStorageKey"
+  | "documentName"
+  | "documentSizeBytes"
+> => {
+  const endpoint = env.storage.urlEndpoint.replace(/\/+$/, "");
+  if (!document.url.startsWith(`${endpoint}/`)) {
+    throw new AppError(
+      400,
+      ERROR_CODES.VALIDATION_ERROR,
+      "Upload the document first: document.url must be a file from this project's image storage.",
+    );
+  }
+
+  return {
+    documentUrl: document.url,
+    documentFileId: document.fileId,
+    documentStorageKey: document.key,
+    documentName: document.name,
+    documentSizeBytes: document.sizeBytes,
+  };
 };
 
 /** Cache-busting version for a stored image; URLs are public and cacheable. */
@@ -72,6 +110,8 @@ export const toPublicProject = (project: ProjectWithImages): PublicProject => ({
   stats: project.stats,
   liveUrl: project.liveUrl,
   githubUrl: project.githubUrl,
+  documentUrl: publicMediaUrl(project.documentStorageKey, project.documentUrl),
+  documentName: project.documentName,
   imageParent: versionedMediaUrl(
     publicMediaUrl(project.coverStorageKey, project.coverImage),
     project.updatedAt,
@@ -97,6 +137,15 @@ export const toAdminProject = (project: ProjectWithImages) => ({
   coverImage: publicMediaUrl(project.coverStorageKey, project.coverImage),
   /** ImageKit fileId for coverImage (null for legacy or external images). */
   coverFileId: project.coverFileId,
+  document: project.documentStorageKey
+    ? {
+        url: publicMediaUrl(project.documentStorageKey, project.documentUrl),
+        fileId: project.documentFileId,
+        key: project.documentStorageKey,
+        name: project.documentName ?? "document.pdf",
+        sizeBytes: project.documentSizeBytes ?? 0,
+      }
+    : null,
   featured: project.featured,
   published: project.published,
   sortOrder: project.sortOrder,
@@ -164,6 +213,7 @@ export const create = async (
     githubUrl: input.githubUrl ?? null,
     published: input.published,
     sortOrder,
+    ...(input.document ? documentColumns(input.document) : {}),
   });
 
   await audit(request, {
@@ -189,12 +239,47 @@ export const update = async (
     }
   }
 
+  const { document, ...patch } = input;
+  const documentPatch =
+    document === undefined
+      ? {}
+      : document === null
+        ? {
+            documentUrl: null,
+            documentFileId: null,
+            documentStorageKey: null,
+            documentName: null,
+            documentSizeBytes: null,
+          }
+        : documentColumns(document);
+
   const updated = await updateProject(id, {
-    ...input,
-    ...(input.liveUrl === undefined ? {} : { liveUrl: input.liveUrl }),
-    ...(input.githubUrl === undefined ? {} : { githubUrl: input.githubUrl }),
+    ...patch,
+    ...(patch.liveUrl === undefined ? {} : { liveUrl: patch.liveUrl }),
+    ...(patch.githubUrl === undefined ? {} : { githubUrl: patch.githubUrl }),
+    ...documentPatch,
   });
   if (!updated) throw notFound("Project not found.");
+
+  // Replacing or clearing the PDF removes the previous object; a failure here
+  // only orphans a file, which is preferable to failing a committed update.
+  const documentReplaced =
+    document !== undefined &&
+    (existing.documentStorageKey !== null ||
+      existing.documentFileId !== null) &&
+    existing.documentStorageKey !== updated.documentStorageKey;
+
+  if (documentReplaced) {
+    await deleteStoredFile({
+      fileId: existing.documentFileId,
+      key: existing.documentStorageKey,
+    }).catch((error: unknown) => {
+      logger.warn(
+        { err: error, key: existing.documentStorageKey },
+        "Failed to delete the replaced project document",
+      );
+    });
+  }
 
   await audit(request, {
     action: "project.update",
@@ -219,6 +304,7 @@ export const remove = async (request: Request, id: string): Promise<void> => {
 
   const files = [
     { fileId: project.coverFileId, key: project.coverStorageKey },
+    { fileId: project.documentFileId, key: project.documentStorageKey },
     ...project.images.map((image) => ({
       fileId: image.fileId,
       key: image.storageKey,

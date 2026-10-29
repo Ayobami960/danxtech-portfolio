@@ -11,15 +11,17 @@ const describe = (fileName: string | undefined): string => {
 };
 
 /** Reject anything that is not a PDF, regardless of extension or MIME type. */
-export const assertPdf = (buffer: Buffer, fileName?: string): void => {
-  if (
-    buffer.length < 5 ||
-    !buffer.subarray(0, 5).equals(PDF_MAGIC)
-  ) {
+export const assertPdf = (
+  buffer: Buffer,
+  fileName?: string,
+  /** Subject of the second sentence, e.g. "The resume" (default) or "The document". */
+  subject = "The resume",
+): void => {
+  if (buffer.length < 5 || !buffer.subarray(0, 5).equals(PDF_MAGIC)) {
     throw new AppError(
       400,
       ERROR_CODES.VALIDATION_ERROR,
-      `${describe(fileName)} is not a PDF. The resume must be a valid PDF file.`,
+      `${describe(fileName)} is not a PDF. ${subject} must be a valid PDF file.`,
     );
   }
 };
