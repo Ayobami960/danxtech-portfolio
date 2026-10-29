@@ -127,7 +127,11 @@ const schema = z
     S3_PUBLIC_BASE_URL: z.url().optional(),
     S3_FORCE_PATH_STYLE: booleanString.default(false),
 
+    IMAGEKIT_PUBLIC_KEY: optionalString,
     IMAGEKIT_PRIVATE_KEY: optionalString,
+    /** Delivery endpoint: https://ik.imagekit.io/<imagekit_id>. */
+    IMAGEKIT_URL_ENDPOINT: z.url().optional(),
+    /** Legacy name for IMAGEKIT_URL_ENDPOINT, still accepted. */
     IMAGEKIT_END_POINT: z.url().optional(),
 
     RESUME_DOWNLOAD_NAME: z
@@ -166,32 +170,56 @@ const schema = z
       }
     }
 
+    if (value.NODE_ENV === "production" && value.STORAGE_DRIVER === "local") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["STORAGE_DRIVER"],
+        message:
+          "STORAGE_DRIVER=local writes to the disk of the running machine, which is read-only (or wiped between requests) on serverless hosts such as Vercel. Set STORAGE_DRIVER=imagekit in production.",
+      });
+    }
+
     if (value.STORAGE_DRIVER === "imagekit") {
-      for (const key of ["IMAGEKIT_PRIVATE_KEY", "IMAGEKIT_END_POINT"] as const) {
-        if (!value[key]) {
-          ctx.addIssue({
-            code: "custom",
-            path: [key],
-            message: `${key} is required when STORAGE_DRIVER=imagekit.`,
-          });
-        }
+      const urlEndpoint = value.IMAGEKIT_URL_ENDPOINT ?? value.IMAGEKIT_END_POINT;
+      if (!value.IMAGEKIT_PUBLIC_KEY) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["IMAGEKIT_PUBLIC_KEY"],
+          message:
+            "IMAGEKIT_PUBLIC_KEY is required when STORAGE_DRIVER=imagekit (the ImageKit client requires it).",
+        });
+      }
+      if (!value.IMAGEKIT_PRIVATE_KEY) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["IMAGEKIT_PRIVATE_KEY"],
+          message: "IMAGEKIT_PRIVATE_KEY is required when STORAGE_DRIVER=imagekit.",
+        });
+      }
+      if (!urlEndpoint) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["IMAGEKIT_URL_ENDPOINT"],
+          message:
+            "IMAGEKIT_URL_ENDPOINT is required when STORAGE_DRIVER=imagekit (https://ik.imagekit.io/<imagekit_id>).",
+        });
       }
 
       // The bare marketing host is not a delivery endpoint: every URL built
       // from it 404s. A custom domain on the account is still accepted.
-      if (value.IMAGEKIT_END_POINT) {
+      if (urlEndpoint) {
         let host: string;
         try {
-          host = new URL(value.IMAGEKIT_END_POINT).hostname.toLowerCase();
+          host = new URL(urlEndpoint).hostname.toLowerCase();
         } catch {
           host = "";
         }
         if (host === "imagekit.io" || host === "www.imagekit.io") {
           ctx.addIssue({
             code: "custom",
-            path: ["IMAGEKIT_END_POINT"],
+            path: ["IMAGEKIT_URL_ENDPOINT"],
             message:
-              "IMAGEKIT_END_POINT must be your ImageKit URL endpoint (https://ik.imagekit.io/<imagekit_id>), not the ImageKit website, otherwise uploaded images are not reachable.",
+              "IMAGEKIT_URL_ENDPOINT must be your ImageKit URL endpoint (https://ik.imagekit.io/<imagekit_id>), not the ImageKit website, otherwise uploaded images are not reachable.",
           });
         }
       }
@@ -265,6 +293,8 @@ export type AppEnv = Readonly<{
       | undefined;
     imagekit:
       | {
+          /** The SDK constructor requires it; server-side uploads only use the private key. */
+          publicKey: string;
           privateKey: string;
           urlEndpoint: string;
         }
@@ -393,8 +423,10 @@ const loadEnv = (): AppEnv => {
       imagekit:
         value.STORAGE_DRIVER === "imagekit"
           ? {
+              publicKey: value.IMAGEKIT_PUBLIC_KEY as string,
               privateKey: value.IMAGEKIT_PRIVATE_KEY as string,
-              urlEndpoint: value.IMAGEKIT_END_POINT as string,
+              urlEndpoint: (value.IMAGEKIT_URL_ENDPOINT ??
+                value.IMAGEKIT_END_POINT) as string,
             }
           : undefined,
     },

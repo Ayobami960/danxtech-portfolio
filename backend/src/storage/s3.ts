@@ -5,7 +5,7 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import type { Readable } from "node:stream";
-import type { StorageDriver } from "./types.js";
+import type { StorageDriver, StoredFile } from "./types.js";
 import { assertSafeKey } from "./types.js";
 
 type S3Config = {
@@ -38,7 +38,7 @@ export class S3StorageDriver implements StorageDriver {
     key: string,
     buffer: Buffer,
     contentType: string,
-  ): Promise<void> {
+  ): Promise<StoredFile> {
     assertSafeKey(key);
     await this.client.send(
       new PutObjectCommand({
@@ -49,6 +49,7 @@ export class S3StorageDriver implements StorageDriver {
         CacheControl: "public, max-age=31536000, immutable",
       }),
     );
+    return { key, url: this.publicUrl(key), fileId: null };
   }
 
   async getStream(key: string): Promise<Readable> {
@@ -66,6 +67,12 @@ export class S3StorageDriver implements StorageDriver {
     assertSafeKey(key);
     await this.client.send(
       new DeleteObjectCommand({ Bucket: this.config.bucket, Key: key }),
+    );
+  }
+
+  deleteById(_fileId: string): Promise<void> {
+    return Promise.reject(
+      new Error("The S3 storage driver cannot delete by file id."),
     );
   }
 

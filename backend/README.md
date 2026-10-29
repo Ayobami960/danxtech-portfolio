@@ -21,14 +21,23 @@ The Admin Vite proxy and Client `.env.example` assume port **8000**; set
 
 ## Environment
 
-Required in production: `DATABASE_URL`, `FRONTEND_ORIGIN` (CSV allowlist; first
-origin = Client, an `admin` host = Admin email links), `JWT_ACCESS_SECRET`,
+Required in production: `DATABASE_URL`, `FRONTEND_ORIGIN_CLIENT` and
+`FRONTEND_ORIGIN_ADMIN` (CSV allowlists; the first Client origin is used for
+chat links), `JWT_ACCESS_SECRET`,
 `JWT_REFRESH_SECRET`, `CSRF_SECRET`, `IP_HASH_SALT`. Cookie domain/samesite and
 `TRUST_PROXY` control first-party cookies and real-IP rate limiting. SMTP
 (`SMTP_*`, `MAIL_FROM`, `OWNER_EMAIL`) enables email notifications.
 `TOTP_ENCRYPTION_KEY` (32 bytes, base64 or 64 hex) is required only when 2FA is
-used. `STORAGE_DRIVER=local|s3` selects media storage; deleting files skips
-`external/` keys.
+used.
+
+`STORAGE_DRIVER` selects media storage: `imagekit` (production), `s3`, or `local`
+(development only — it writes to disk, so it is rejected when
+`NODE_ENV=production`). ImageKit needs `IMAGEKIT_PUBLIC_KEY`,
+`IMAGEKIT_PRIVATE_KEY` and `IMAGEKIT_URL_ENDPOINT`; `IMAGEKIT_END_POINT` is
+still accepted as a legacy alias. Uploaded files are held in memory, never on
+disk, and each row stores the delivery `url`, the ImageKit `fileId` and the
+storage key; deletes use the `fileId`. Seeded assets under `external/` are never
+touched.
 
 ## Deploy
 
@@ -61,6 +70,9 @@ shape serves REST only:
 npm run typecheck
 npm run lint
 npm run build
+npm run storage:check            # verify every stored key exists in ImageKit
+npm run storage:migrate-local    # dry run: list images still stored locally
+npm run storage:migrate-local -- --apply   # upload them to ImageKit
 ```
 
 No automated tests are included. See `docs/MANUAL_QA.md` for the end-to-end

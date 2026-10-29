@@ -830,7 +830,8 @@ export const storeChatImage = async (
   const processed = await processImage(file.buffer, file.originalname);
   const key = `chat/${conversationId}/${randomUUID()}.webp`;
   const storage = getStorage();
-  await storage.put(key, processed.buffer, processed.contentType);
+  // Bytes are already in memory (multer.memoryStorage): nothing touches disk.
+  const stored = await storage.put(key, processed.buffer, processed.contentType);
 
   await audit(request, {
     action: "chat.image.upload",
@@ -840,8 +841,8 @@ export const storeChatImage = async (
   });
 
   return {
-    key,
-    url: storage.publicUrl(key),
+    key: stored.key,
+    url: stored.url,
     mimeType: processed.contentType,
   };
 };

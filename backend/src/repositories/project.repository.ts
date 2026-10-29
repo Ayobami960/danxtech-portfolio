@@ -12,6 +12,7 @@ export type ProjectWithImages = Project & {
     id: string;
     projectId: string;
     url: string;
+    fileId: string | null;
     storageKey: string;
     originalName: string | null;
     mimeType: string | null;
@@ -177,6 +178,7 @@ export const addProjectImages = async (
   projectId: string,
   images: Array<{
     url: string;
+    fileId?: string | null;
     storageKey: string;
     sortOrder: number;
     originalName?: string;
@@ -190,6 +192,7 @@ export const addProjectImages = async (
     images.map((image) => ({
       ...image,
       projectId,
+      fileId: image.fileId ?? null,
       originalName: image.originalName ?? null,
       mimeType: image.mimeType ?? null,
       sizeBytes: image.sizeBytes ?? null,
@@ -200,12 +203,18 @@ export const addProjectImages = async (
 
 export const findProjectImage = async (
   imageId: string,
-): Promise<{ id: string; projectId: string; storageKey: string } | null> => {
+): Promise<{
+  id: string;
+  projectId: string;
+  storageKey: string;
+  fileId: string | null;
+} | null> => {
   const rows = await db
     .select({
       id: projectImages.id,
       projectId: projectImages.projectId,
       storageKey: projectImages.storageKey,
+      fileId: projectImages.fileId,
     })
     .from(projectImages)
     .where(eq(projectImages.id, imageId))

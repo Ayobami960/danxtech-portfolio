@@ -22,7 +22,8 @@ export const RESUME_ID = "resume";
 
 export const DEFAULT_PAGE_SIZE = 20;
 export const MAX_PAGE_SIZE = 100;
-export const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
+/** Project cover/gallery uploads. Re-encoded to WebP before storage. */
+export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 export const MAX_RESUME_BYTES = 25 * 1024 * 1024;
 export const MAX_GALLERY_IMAGES = 10;
 export const MAX_CHAT_IMAGE_BYTES = 10 * 1024 * 1024;

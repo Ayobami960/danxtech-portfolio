@@ -24,7 +24,11 @@ import {
   type ProjectWithImages,
 } from "../repositories/project.repository.js";
 import { audit } from "../repositories/audit-writer.js";
-import { getStorage, publicMediaUrl } from "../storage/index.js";
+import {
+  deleteStoredFile,
+  getStorage,
+  publicMediaUrl,
+} from "../storage/index.js";
 import { processImage } from "./image.service.js";
 import { sha256Hex } from "../lib/crypto.js";
 import { contentUpdated } from "./revalidate.service.js";
@@ -91,6 +95,8 @@ export const toAdminProject = (project: ProjectWithImages) => ({
   liveUrl: project.liveUrl,
   githubUrl: project.githubUrl,
   coverImage: publicMediaUrl(project.coverStorageKey, project.coverImage),
+  /** ImageKit fileId for coverImage (null for legacy or external images). */
+  coverFileId: project.coverFileId,
   featured: project.featured,
   published: project.published,
   sortOrder: project.sortOrder,
@@ -99,6 +105,8 @@ export const toAdminProject = (project: ProjectWithImages) => ({
   gallery: project.images.map((image) => ({
     id: image.id,
     url: publicMediaUrl(image.storageKey, image.url),
+    /** ImageKit fileId, used by the admin to delete the image. */
+    fileId: image.fileId,
     sortOrder: image.sortOrder,
   })),
 });
@@ -209,21 +217,23 @@ export const remove = async (request: Request, id: string): Promise<void> => {
     entityId: id,
   });
 
-  const storage = getStorage();
-  const keys = [
-    project.coverStorageKey,
-    ...project.images.map((image) => image.storageKey),
-  ].filter((key): key is string => Boolean(key));
+  const files = [
+    { fileId: project.coverFileId, key: project.coverStorageKey },
+    ...project.images.map((image) => ({
+      fileId: image.fileId,
+      key: image.storageKey,
+    })),
+  ].filter((file) => file.fileId !== null || Boolean(file.key));
 
   // The database is the source of truth; an orphaned file is preferable to a
   // failed delete that leaves the project visible.
-  for (const key of keys) {
+  for (const file of files) {
     // Seed images live in the Client's public directory, not our storage.
-    if (key.startsWith("external/")) continue;
+    if (file.key?.startsWith("external/")) continue;
     try {
-      await storage.delete(key);
+      await deleteStoredFile(file);
     } catch (error) {
-      logger.warn({ err: error, key }, "Failed to delete project file");
+      logger.warn({ err: error, ...file }, "Failed to delete project file");
     }
   }
 
@@ -278,25 +288,29 @@ export const setCover = async (
   const processed = await processImage(file.buffer, file.originalname);
   const key = `projects/${id}/${randomUUID()}.webp`;
   const storage = getStorage();
-  await storage.put(key, processed.buffer, processed.contentType);
-  const url = storage.publicUrl(key);
+  const stored = await storage.put(key, processed.buffer, processed.contentType);
 
   try {
     await updateProject(id, {
-      coverImage: url,
-      coverStorageKey: key,
+      coverImage: stored.url,
+      coverFileId: stored.fileId,
+      coverStorageKey: stored.key,
       coverOriginalName: file.originalname.slice(0, 255) || null,
       coverMimeType: processed.contentType,
       coverSizeBytes: processed.buffer.length,
       coverSha256: sha256Hex(processed.buffer),
     });
   } catch (error) {
-    await storage.delete(key).catch(() => undefined);
+    // Never leave an orphaned upload behind when the row could not be written.
+    await deleteStoredFile(stored).catch(() => undefined);
     throw error;
   }
 
-  if (project.coverStorageKey && project.coverStorageKey !== key) {
-    await storage.delete(project.coverStorageKey).catch((error: unknown) => {
+  if (project.coverStorageKey !== null || project.coverFileId !== null) {
+    await deleteStoredFile({
+      fileId: project.coverFileId,
+      key: project.coverStorageKey,
+    }).catch((error: unknown) => {
       logger.warn(
         { err: error, key: project.coverStorageKey },
         "Failed to delete the replaced cover image",
@@ -342,6 +356,7 @@ export const addGalleryImages = async (
   const storage = getStorage();
   const uploaded: Array<{
     url: string;
+    fileId: string | null;
     storageKey: string;
     sortOrder: number;
     originalName: string;
@@ -354,10 +369,15 @@ export const addGalleryImages = async (
     const startOrder = (await maxImageSortOrder(id)) + 1;
     for (const [index, item] of processed.entries()) {
       const key = `projects/${id}/${randomUUID()}.webp`;
-      await storage.put(key, item.image.buffer, item.image.contentType);
+      const stored = await storage.put(
+        key,
+        item.image.buffer,
+        item.image.contentType,
+      );
       uploaded.push({
-        url: storage.publicUrl(key),
-        storageKey: key,
+        url: stored.url,
+        fileId: stored.fileId,
+        storageKey: stored.key,
         sortOrder: startOrder + index,
         originalName: item.file.originalname.slice(0, 255) || `image-${index + 1}.webp`,
         mimeType: item.image.contentType,
@@ -367,9 +387,10 @@ export const addGalleryImages = async (
     }
     await addProjectImages(id, uploaded);
   } catch (error) {
+    // Never leave orphaned uploads behind when the rows could not be written.
     await Promise.all(
       uploaded.map((item) =>
-        storage.delete(item.storageKey).catch(() => undefined),
+        deleteStoredFile(item).catch(() => undefined),
       ),
     );
     throw error;
@@ -424,7 +445,7 @@ export const removeGalleryImage = async (
 
   try {
     if (!image.storageKey.startsWith("external/")) {
-      await getStorage().delete(image.storageKey);
+      await deleteStoredFile({ fileId: image.fileId, key: image.storageKey });
     }
   } catch (error) {
     logger.warn(

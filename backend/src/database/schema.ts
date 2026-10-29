@@ -219,6 +219,8 @@ export const projects = pgTable("projects", {
   liveUrl: text("live_url"),                  
   githubUrl: text("github_url"),              
   coverImage: text("cover_image"),            
+  /** ImageKit fileId for coverImage; needed to delete it without a lookup. */
+  coverFileId: text("cover_file_id"),
   coverStorageKey: text("cover_storage_key"),
   coverOriginalName: varchar("cover_original_name", { length: 255 }),
   coverMimeType: varchar("cover_mime_type", { length: 100 }),
@@ -239,6 +241,8 @@ export const projectImages = pgTable("project_images", {
   id: pk(),
   projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   url: text("url").notNull(),
+  /** ImageKit fileId; needed to delete it without a lookup. */
+  fileId: text("file_id"),
   storageKey: text("storage_key").notNull().unique(),
   originalName: varchar("original_name", { length: 255 }),
   mimeType: varchar("mime_type", { length: 100 }),

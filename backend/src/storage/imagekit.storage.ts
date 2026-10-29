@@ -1,14 +1,12 @@
 // storage/imagekit.storage.ts
 import { Readable } from "node:stream";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
+import ImageKit from "imagekit";
 import { logger } from "../config/logger.js";
 import { AppError, ERROR_CODES } from "../lib/errors.js";
-import type { StorageDriver } from "./types.js";
+import type { StorageDriver, StoredFile } from "./types.js";
 
-const UPLOAD_URL = "https://upload.imagekit.io/api/v1/files/upload";
-const API_URL = "https://api.imagekit.io/v1/files";
-
-/** One attempt plus two retries; retries cover 5xx responses and network errors only. */
+/** One attempt plus two retries; retries cover 5xx, 429 and network errors only. */
 const UPLOAD_MAX_ATTEMPTS = 3;
 const UPLOAD_RETRY_BASE_DELAY_MS = 300;
 const UPLOAD_TIMEOUT_MS = 60_000;
@@ -28,9 +26,16 @@ const TOO_LARGE_MESSAGE = "The image is too large for the image storage plan.";
 const UNCONFIRMED_MESSAGE = "The image could not be stored. Please try again.";
 
 export type ImageKitConfig = {
+  /** Required by the SDK constructor; never used for server-side uploads. */
+  publicKey: string;
   privateKey: string;
   urlEndpoint: string;
 };
+
+/** The subset of ImageKit's upload response this driver relies on. */
+type UploadResult = { fileId: string; url: string; filePath: string };
+/** The subset of a listed file this driver relies on. */
+type ListedFile = { fileId?: string; filePath?: string; type?: string };
 
 const splitKey = (key: string): { folder: string; fileName: string } => {
   const clean = key.replace(/^\/+/, "");
@@ -62,10 +67,63 @@ const safeDecode = (value: string): string => {
 const sleep = (milliseconds: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, milliseconds));
 
+/** Bounds a provider call so one hung request cannot hold a serverless invocation. */
+const withTimeout = async <T>(
+  promise: Promise<T>,
+  milliseconds: number,
+  label: string,
+): Promise<T> => {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`${label} timed out after ${milliseconds}ms.`)),
+          milliseconds,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+};
+
 const enoent = (key: string): NodeJS.ErrnoException => {
-  const error = new Error(`ImageKit file not found: ${key}`) as NodeJS.ErrnoException;
+  const error = new Error(
+    `ImageKit file not found: ${key}`,
+  ) as NodeJS.ErrnoException;
   error.code = "ENOENT";
   return error;
+};
+
+/**
+ * The SDK rejects with the parsed response body (a plain object carrying
+ * `$ResponseMetadata.statusCode`) for HTTP failures and with an Error when the
+ * request never reached ImageKit.
+ */
+const statusOf = (error: unknown): number | null => {
+  const metadata = isRecord(error) ? error.$ResponseMetadata : undefined;
+  if (isRecord(metadata) && typeof metadata.statusCode === "number") {
+    return metadata.statusCode;
+  }
+  const status = isRecord(error) ? error.statusCode : undefined;
+  return typeof status === "number" ? status : null;
+};
+
+/** ImageKit's support reference for one failed request, when it was returned. */
+const requestIdOf = (error: unknown): string | undefined => {
+  const metadata = isRecord(error) ? error.$ResponseMetadata : undefined;
+  if (!isRecord(metadata) || !isRecord(metadata.headers)) return undefined;
+  const value =
+    metadata.headers["x-ik-requestid"] ?? metadata.headers["X-IK-Requestid"];
+  return typeof value === "string" ? value : undefined;
+};
+
+const messageOf = (error: unknown): string => {
+  if (error instanceof Error) return error.message;
+  const message = isRecord(error) ? error.message : undefined;
+  return typeof message === "string" ? message : "no message";
 };
 
 /** Map an ImageKit status onto the API contract: our input is never the culprit for 5xx or auth failures. */
@@ -87,59 +145,22 @@ type UploadContext = {
   contentType: string;
 };
 
-type UpstreamError = { message: string; requestId: string | null };
-
-/** Read ImageKit's error text for the log without leaking the key, auth header or file bytes. */
-const readUpstreamError = async (
-  response: Response,
-): Promise<UpstreamError> => {
-  const requestId = response.headers.get("x-ik-requestid");
-  let raw: string;
-  try {
-    raw = await response.text();
-  } catch {
-    raw = "";
-  }
-
-  let message = "";
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (isRecord(parsed) && typeof parsed.message === "string") {
-      message = parsed.message;
-    }
-  } catch {
-    // ImageKit answers some failures with a plain-text body.
-    message = raw.trim();
-  }
-
-  return {
-    message: (message || response.statusText || "no message").slice(0, 500),
-    requestId,
-  };
-};
-
 export class ImageKitStorage implements StorageDriver {
   readonly name = "imagekit" as const;
-  private readonly auth: string;
+  private readonly client: ImageKit;
   private readonly endpoint: string;
 
   constructor(config: ImageKitConfig) {
-    // Basic auth: private key as username, empty password.
-    this.auth = `Basic ${Buffer.from(`${config.privateKey}:`).toString("base64")}`;
+    this.client = new ImageKit({
+      publicKey: config.publicKey,
+      privateKey: config.privateKey,
+      urlEndpoint: config.urlEndpoint,
+    });
     this.endpoint = config.urlEndpoint.replace(/\/+$/, "");
   }
 
-  async put(key: string, body: Buffer, contentType: string): Promise<void> {
+  async put(key: string, body: Buffer, contentType: string): Promise<StoredFile> {
     const { folder, fileName } = splitKey(key);
-    const form = new FormData();
-    const bytes = new Uint8Array(body.length);
-    body.copy(bytes);
-    form.set("file", new Blob([bytes], { type: contentType }), fileName);
-    form.set("fileName", fileName);
-    form.set("folder", folder);
-    // Keep the exact key so it can be addressed later.
-    form.set("useUniqueFileName", "false");
-    form.set("overwriteFile", "true");
 
     const context: UploadContext = {
       key,
@@ -149,28 +170,21 @@ export class ImageKitStorage implements StorageDriver {
       contentType,
     };
 
-    const response = await this.sendUpload(form, context);
-
-    if (!response.ok) {
-      const upstream = await readUpstreamError(response);
-      logger.error(
-        {
-          provider: this.name,
-          upstreamStatus: response.status,
-          upstreamMessage: upstream.message,
-          upstreamRequestId: upstream.requestId,
-          ...context,
-        },
-        "ImageKit rejected an upload",
-      );
-      throw uploadFailure(response.status);
-    }
+    const uploaded = await this.sendUpload(
+      {
+        file: body,
+        fileName,
+        folder,
+        // Keep the exact key so it can be addressed (and replaced) later.
+        useUniqueFileName: false,
+        overwriteFile: true,
+      },
+      context,
+    );
 
     // Confirm ImageKit stored exactly the key we will address later, and that
     // the delivery URL it reports belongs to the configured endpoint. A wrong
-    // IMAGEKIT_END_POINT used to be written to the database as a dead URL.
-    const payload: unknown = await response.json().catch(() => null);
-    const uploaded = isRecord(payload) ? payload : {};
+    // IMAGEKIT_URL_ENDPOINT used to be written to the database as a dead URL.
     const storedPath =
       typeof uploaded.filePath === "string" ? safeDecode(uploaded.filePath) : "";
     const deliveredUrl = typeof uploaded.url === "string" ? uploaded.url : "";
@@ -193,7 +207,7 @@ export class ImageKitStorage implements StorageDriver {
     if (!configuredOrigin || deliveredOrigin !== configuredOrigin) {
       logger.error(
         { provider: this.name, key, configuredOrigin, deliveredOrigin },
-        "IMAGEKIT_END_POINT does not match the delivery URL ImageKit returned",
+        "IMAGEKIT_URL_ENDPOINT does not match the delivery URL ImageKit returned",
       );
       throw new AppError(
         502,
@@ -201,23 +215,32 @@ export class ImageKitStorage implements StorageDriver {
         UNCONFIRMED_MESSAGE,
       );
     }
+
+    return {
+      key: expectedPath.replace(/^\/+/, ""),
+      url: deliveredUrl,
+      fileId: uploaded.fileId,
+    };
   }
 
   async delete(key: string): Promise<void> {
     const fileId = await this.findFileId(key);
     if (!fileId) return; // already gone: deletion is idempotent
+    await this.deleteById(fileId);
+  }
 
-    const response = await fetch(`${API_URL}/${fileId}`, {
-      method: "DELETE",
-      headers: { Authorization: this.auth },
-    });
-
-    if (!response.ok && response.status !== 404) {
-      throw new AppError(
-        502,
-        ERROR_CODES.INTERNAL_ERROR,
-        `ImageKit delete failed (${response.status}).`,
+  /** Delete by the stored fileId: one request, no path lookup. */
+  async deleteById(fileId: string): Promise<void> {
+    try {
+      await withTimeout(
+        this.client.deleteFile(fileId),
+        LOOKUP_TIMEOUT_MS,
+        "ImageKit delete",
       );
+    } catch (error) {
+      // Already deleted: deletion is idempotent.
+      if (statusOf(error) === 404) return;
+      throw error;
     }
   }
 
@@ -237,6 +260,20 @@ export class ImageKitStorage implements StorageDriver {
   }
 
   /**
+   * The fileId ImageKit assigned to `key`, or null when the file does not exist.
+   * Legacy rows written before fileIds were stored use this once.
+   */
+  async findFileId(key: string): Promise<string | null> {
+    const { folder, fileName } = splitKey(key);
+    const files = await this.listFiles({
+      path: folder,
+      searchQuery: `name = "${fileName.replace(/"/g, '\\"')}"`,
+      limit: 1,
+    });
+    return files.find((file) => file.fileId)?.fileId ?? null;
+  }
+
+  /**
    * Absolute ImageKit paths of the files directly inside `folder`. One request
    * per folder (paged) is far cheaper than a lookup per key. Throws on any
    * upstream failure so callers can report "unknown" instead of "missing".
@@ -246,116 +283,128 @@ export class ImageKitStorage implements StorageDriver {
     let skip = 0;
 
     for (let page = 0; page < LIST_MAX_PAGES; page += 1) {
-      const params = new URLSearchParams({
+      const files = await this.listFiles({
         path: folder,
-        limit: String(LIST_PAGE_SIZE),
-        skip: String(skip),
+        limit: LIST_PAGE_SIZE,
+        skip,
       });
 
-      let response = await fetch(`${API_URL}?${params}`, {
-        headers: { Authorization: this.auth },
-        signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS),
-      });
-
-      if (response.status === 429) {
-        await sleep(LIST_RATE_LIMIT_DELAY_MS);
-        response = await fetch(`${API_URL}?${params}`, {
-          headers: { Authorization: this.auth },
-          signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS),
-        });
-      }
-
-      if (!response.ok) {
-        throw new Error(
-          `ImageKit listing failed (${response.status}) for ${folder}.`,
-        );
-      }
-
-      const payload: unknown = await response.json();
-      if (!Array.isArray(payload)) {
-        throw new Error("ImageKit listing returned an unexpected payload.");
-      }
-
-      for (const entry of payload) {
-        if (!isRecord(entry)) continue;
-        if (entry.type === "file" && typeof entry.filePath === "string") {
-          paths.push(safeDecode(entry.filePath));
+      for (const file of files) {
+        if (file.type === "file" && typeof file.filePath === "string") {
+          paths.push(safeDecode(file.filePath));
         }
       }
 
-      if (payload.length < LIST_PAGE_SIZE) break;
+      if (files.length < LIST_PAGE_SIZE) break;
       skip += LIST_PAGE_SIZE;
     }
 
     return paths;
   }
 
-  /** Upload with bounded retries; 5xx and network failures are retried, 4xx never is. */
+  /** Paged listing with one retry when ImageKit rate-limits us. */
+  private async listFiles(options: {
+    path: string;
+    limit: number;
+    skip?: number;
+    searchQuery?: string;
+  }): Promise<ListedFile[]> {
+    const call = (): Promise<ListedFile[]> =>
+      withTimeout(
+        this.client.listFiles(options) as unknown as Promise<ListedFile[]>,
+        LOOKUP_TIMEOUT_MS,
+        "ImageKit listing",
+      );
+
+    let files: ListedFile[];
+    try {
+      files = await call();
+    } catch (error) {
+      if (statusOf(error) !== 429) throw error;
+      await sleep(LIST_RATE_LIMIT_DELAY_MS);
+      files = await call();
+    }
+
+    if (!Array.isArray(files)) {
+      throw new Error("ImageKit listing returned an unexpected payload.");
+    }
+    return files;
+  }
+
+  /** Upload with bounded retries; 5xx, 429 and network failures are retried, 4xx never is. */
   private async sendUpload(
-    form: FormData,
+    options: {
+      file: Buffer;
+      fileName: string;
+      folder: string;
+      useUniqueFileName: boolean;
+      overwriteFile: boolean;
+    },
     context: UploadContext,
-  ): Promise<Response> {
+  ): Promise<UploadResult> {
     let lastError: unknown;
 
     for (let attempt = 1; attempt <= UPLOAD_MAX_ATTEMPTS; attempt += 1) {
       try {
-        const response = await fetch(UPLOAD_URL, {
-          method: "POST",
-          headers: { Authorization: this.auth },
-          body: form,
-          signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
-        });
+        const response = (await withTimeout(
+          this.client.upload(options) as unknown as Promise<UploadResult>,
+          UPLOAD_TIMEOUT_MS,
+          "ImageKit upload",
+        )) as UploadResult;
 
-        if (response.status < 500 || attempt === UPLOAD_MAX_ATTEMPTS) {
-          return response;
+        if (typeof response?.fileId !== "string" || response.fileId === "") {
+          logger.error(
+            { provider: this.name, ...context },
+            "ImageKit upload returned no fileId",
+          );
+          throw new AppError(
+            502,
+            ERROR_CODES.SERVICE_UNAVAILABLE,
+            UNCONFIRMED_MESSAGE,
+          );
         }
+        return response;
+      } catch (error) {
+        lastError = error;
+        // A validation error from our own response check is final.
+        if (error instanceof AppError) break;
+
+        const status = statusOf(error);
+        const retryable = status === null || status === 429 || status >= 500;
+        if (!retryable || attempt === UPLOAD_MAX_ATTEMPTS) break;
 
         logger.warn(
           {
+            err: error,
             provider: this.name,
             attempt,
-            upstreamStatus: response.status,
-            upstreamRequestId: response.headers.get("x-ik-requestid"),
+            upstreamStatus: status,
+            upstreamMessage: messageOf(error),
+            upstreamRequestId: requestIdOf(error),
             ...context,
           },
-          "ImageKit upload returned a server error; retrying",
+          "ImageKit upload failed; retrying",
         );
-        await response.text().catch(() => "");
-      } catch (error) {
-        lastError = error;
-        if (attempt === UPLOAD_MAX_ATTEMPTS) break;
-        logger.warn(
-          { err: error, provider: this.name, attempt, ...context },
-          "ImageKit upload request failed; retrying",
-        );
+        await sleep(UPLOAD_RETRY_BASE_DELAY_MS * 2 ** (attempt - 1));
       }
-
-      await sleep(UPLOAD_RETRY_BASE_DELAY_MS * 2 ** (attempt - 1));
     }
 
+    if (lastError instanceof AppError) throw lastError;
+
+    const status = statusOf(lastError);
     logger.error(
-      { err: lastError, provider: this.name, ...context },
-      "ImageKit upload could not be completed",
+      {
+        err: lastError,
+        provider: this.name,
+        upstreamStatus: status,
+        upstreamMessage: messageOf(lastError),
+        upstreamRequestId: requestIdOf(lastError),
+        ...context,
+      },
+      "ImageKit rejected an upload",
     );
-    throw new AppError(502, ERROR_CODES.SERVICE_UNAVAILABLE, UNAVAILABLE_MESSAGE);
-  }
-
-  private async findFileId(key: string): Promise<string | null> {
-    const { folder, fileName } = splitKey(key);
-    const params = new URLSearchParams({
-      path: folder,
-      searchQuery: `name = "${fileName.replace(/"/g, '\\"')}"`,
-      limit: "1",
-    });
-
-    const response = await fetch(`${API_URL}?${params}`, {
-      headers: { Authorization: this.auth },
-    });
-    if (!response.ok) {
-      throw new Error(`ImageKit lookup failed (${response.status}).`);
-    }
-
-    const files = (await response.json()) as Array<{ fileId: string }>;
-    return files[0]?.fileId ?? null;
+    throw status === null
+      ? new AppError(502, ERROR_CODES.SERVICE_UNAVAILABLE, UNAVAILABLE_MESSAGE)
+      : uploadFailure(status);
   }
 }
