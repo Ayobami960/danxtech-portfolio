@@ -371,9 +371,9 @@ export const setCover = async (
     );
   }
 
+  const storage = getStorage();
   const processed = await processImage(file.buffer, file.originalname);
   const key = `projects/${id}/${randomUUID()}.webp`;
-  const storage = getStorage();
   const stored = await storage.put(key, processed.buffer, processed.contentType);
 
   try {

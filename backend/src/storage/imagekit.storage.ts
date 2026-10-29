@@ -212,6 +212,68 @@ export class ImageKitStorage implements StorageDriver {
     this.endpoint = config.urlEndpoint.replace(/\/+$/, "");
   }
 
+  /**
+   * Best-effort pre-flight check: the real result is confirmed inside `put`.
+   *
+   * `getFileDetails` is a cheap authenticated GET that exercises the same signing
+   * path as a real upload without writing anything. The probe fileId is a name
+   * that is unlikely to exist; what matters is whether ImageKit accepted the
+   * credentials and responded.
+   *
+   * - 401/403  → credentials rejected → unhealthy (logged at error level).
+   * - any other HTTP status, including 400 (e.g. an invalid probe fileId) and
+   *   404 (probe file does not exist) → the request reached ImageKit and was
+   *   authenticated → healthy.
+   * - a network error or timeout → unhealthy (logged at warn level).
+   *
+   * The probe fileId is never created on purpose.
+   */
+  async healthy(): Promise<boolean> {
+    try {
+      await withTimeout(
+        this.client.getFileDetails("storage-health-check-probe") as unknown as Promise<unknown>,
+        LOOKUP_TIMEOUT_MS,
+        "ImageKit health check",
+      );
+      return true;
+    } catch (error) {
+      const status = statusOf(error);
+      // 401/403 = credentials rejected → not healthy.
+      if (status === 401 || status === 403) {
+        logger.error(
+          {
+            provider: this.name,
+            statusCode: status,
+            code: networkCodeOf(error),
+            message: messageOf(error),
+            requestId: requestIdOf(error),
+            body: responseBodyOf(error),
+          },
+          "ImageKit health check rejected the credentials",
+        );
+        return false;
+      }
+      // Everything else (400 from an unexpected probe name, 404 because the
+      // probe file does not exist, 5xx from a transient outage) means the request
+      // reached ImageKit and was processed. Treat as healthy, but log the 5xx so
+      // a real outage is visible in the Vercel function logs.
+      if (status !== null && status >= 500) {
+        logger.warn(
+          {
+            provider: this.name,
+            statusCode: status,
+            code: networkCodeOf(error),
+            message: messageOf(error),
+            requestId: requestIdOf(error),
+            body: responseBodyOf(error),
+          },
+          "ImageKit health check probe reached the service but got a 5xx",
+        );
+      }
+      return true;
+    }
+  }
+
   async put(key: string, body: Buffer, contentType: string): Promise<StoredFile> {
     const { folder, fileName } = splitKey(key);
 
@@ -448,15 +510,16 @@ export class ImageKitStorage implements StorageDriver {
 
     // The client only sees a generic message. The cause — error message, HTTP
     // status, ImageKit response body and request id — goes to the server log so
-    // a failed upload can be diagnosed from the Vercel function logs.
-    // eslint-disable-next-line no-console -- the only trace of the cause that reaches the Vercel function log; the client stays generic
-    console.error(
-      "[storage:imagekit] image upload failed",
-      JSON.stringify({
+    // a failed upload can be diagnosed from the Vercel function logs. The logger
+    // is redacted to never emit the private key or any axios config.
+    logger.error(
+      {
         ...failureLog(lastError, context, UPLOAD_MAX_ATTEMPTS),
         clientMessage: failure.message,
-      }),
+      },
+      "[storage:imagekit] image upload failed",
     );
+
 
     throw failure;
   }

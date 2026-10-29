@@ -184,13 +184,19 @@ const schema = z
     }
 
     // The bare marketing host is not a delivery endpoint: every URL built
-    // from it 404s. A custom domain on the account is still accepted.
+    // from it 404s. A custom domain on the account (e.g. cdn.example.com) is
+    // still accepted, but the default endpoint must look like
+    // https://ik.imagekit.io/<imagekit_id>.
     if (urlEndpoint) {
       let host: string;
+      let pathname: string;
       try {
-        host = new URL(urlEndpoint).hostname.toLowerCase();
+        const parsed = new URL(urlEndpoint);
+        host = parsed.hostname.toLowerCase();
+        pathname = parsed.pathname;
       } catch {
         host = "";
+        pathname = "";
       }
       if (host === "imagekit.io" || host === "www.imagekit.io") {
         ctx.addIssue({
@@ -198,6 +204,23 @@ const schema = z
           path: ["IMAGEKIT_URL_ENDPOINT"],
           message:
             "IMAGEKIT_URL_ENDPOINT must be your ImageKit URL endpoint (https://ik.imagekit.io/<imagekit_id>), not the ImageKit website, otherwise uploaded images are not reachable.",
+        });
+      } else if (host === "ik.imagekit.io" && pathname === "/") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["IMAGEKIT_URL_ENDPOINT"],
+          message:
+            "IMAGEKIT_URL_ENDPOINT must include your ImageKit id, e.g. https://ik.imagekit.io/<imagekit_id>. The value https://ik.imagekit.io/ is the base host and is not a valid delivery endpoint.",
+        });
+      } else if (
+        host?.endsWith(".imagekit.io") &&
+        !pathname.startsWith("/")
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["IMAGEKIT_URL_ENDPOINT"],
+          message:
+            "IMAGEKIT_URL_ENDPOINT must end with the ImageKit delivery path, e.g. https://ik.imagekit.io/<imagekit_id> (a path of /<imagekit_id>).",
         });
       }
     }
