@@ -13,6 +13,7 @@ import {
   uploadGallery,
 } from "../../controllers/admin.project.controller.js";
 import {
+  limitImageRequestBody,
   uploadGalleryImages,
   uploadSingleImage,
 } from "../../middleware/upload.js";
@@ -64,12 +65,14 @@ export const registerProjectRoutes = (router: Router): void => {
   router.post(
     "/projects/:id/cover",
     validate({ params: uuidParams }),
+    limitImageRequestBody,
     uploadSingleImage,
     uploadCover,
   );
   router.post(
     "/projects/:id/gallery",
     validate({ params: uuidParams }),
+    limitImageRequestBody,
     uploadGalleryImages,
     uploadGallery,
   );

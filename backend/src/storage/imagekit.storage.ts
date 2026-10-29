@@ -126,6 +126,58 @@ const messageOf = (error: unknown): string => {
   return typeof message === "string" ? message : "no message";
 };
 
+/** Keys that can carry credentials (axios puts the private key in `config`). */
+const SECRET_LOG_KEYS = new Set([
+  "config",
+  "request",
+  "response",
+  "headers",
+  "authorization",
+  "$responsemetadata",
+]);
+
+/**
+ * The ImageKit response body for a failed request, without anything that could
+ * carry credentials. For HTTP failures the SDK rejects with the parsed body
+ * itself; for transport failures with an axios error whose body is under
+ * `response.data` and whose `config` holds the private key in Basic auth.
+ */
+const responseBodyOf = (error: unknown): unknown => {
+  if (!isRecord(error)) return undefined;
+
+  if (isRecord(error.response) && error.response.data !== undefined) {
+    return error.response.data;
+  }
+
+  const body: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(error)) {
+    if (SECRET_LOG_KEYS.has(key.toLowerCase())) continue;
+    body[key] = value;
+  }
+  return Object.keys(body).length > 0 ? body : undefined;
+};
+
+const networkCodeOf = (error: unknown): string | undefined => {
+  const code = isRecord(error) ? error.code : undefined;
+  return typeof code === "string" ? code : undefined;
+};
+
+/** One log line an operator can act on, with no credentials in it. */
+const failureLog = (
+  error: unknown,
+  context: UploadContext,
+  attempts: number,
+): Record<string, unknown> => ({
+  provider: "imagekit",
+  ...context,
+  attempts,
+  statusCode: statusOf(error),
+  requestId: requestIdOf(error),
+  code: networkCodeOf(error),
+  message: messageOf(error),
+  body: responseBodyOf(error),
+});
+
 /** Map an ImageKit status onto the API contract: our input is never the culprit for 5xx or auth failures. */
 const uploadFailure = (status: number): AppError => {
   if (status === 413) {
@@ -374,37 +426,37 @@ export class ImageKitStorage implements StorageDriver {
         if (!retryable || attempt === UPLOAD_MAX_ATTEMPTS) break;
 
         logger.warn(
-          {
-            err: error,
-            provider: this.name,
-            attempt,
-            upstreamStatus: status,
-            upstreamMessage: messageOf(error),
-            upstreamRequestId: requestIdOf(error),
-            ...context,
-          },
+          failureLog(error, context, attempt),
           "ImageKit upload failed; retrying",
         );
         await sleep(UPLOAD_RETRY_BASE_DELAY_MS * 2 ** (attempt - 1));
       }
     }
 
-    if (lastError instanceof AppError) throw lastError;
-
     const status = statusOf(lastError);
-    logger.error(
-      {
-        err: lastError,
-        provider: this.name,
-        upstreamStatus: status,
-        upstreamMessage: messageOf(lastError),
-        upstreamRequestId: requestIdOf(lastError),
-        ...context,
-      },
-      "ImageKit rejected an upload",
+    const failure =
+      lastError instanceof AppError
+        ? lastError
+        : status === null
+          ? new AppError(
+              502,
+              ERROR_CODES.SERVICE_UNAVAILABLE,
+              UNAVAILABLE_MESSAGE,
+            )
+          : uploadFailure(status);
+
+    // The client only sees a generic message. The cause — error message, HTTP
+    // status, ImageKit response body and request id — goes to the server log so
+    // a failed upload can be diagnosed from the Vercel function logs.
+    // eslint-disable-next-line no-console -- the only trace of the cause that reaches the Vercel function log; the client stays generic
+    console.error(
+      "[storage:imagekit] image upload failed",
+      JSON.stringify({
+        ...failureLog(lastError, context, UPLOAD_MAX_ATTEMPTS),
+        clientMessage: failure.message,
+      }),
     );
-    throw status === null
-      ? new AppError(502, ERROR_CODES.SERVICE_UNAVAILABLE, UNAVAILABLE_MESSAGE)
-      : uploadFailure(status);
+
+    throw failure;
   }
 }

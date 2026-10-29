@@ -23,7 +23,13 @@ export const RESUME_ID = "resume";
 export const DEFAULT_PAGE_SIZE = 20;
 export const MAX_PAGE_SIZE = 100;
 /** Project cover/gallery uploads. Re-encoded to WebP before storage. */
-export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+export const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+/**
+ * Vercel rejects serverless request bodies above ~4.5 MB before the function
+ * runs, so a bigger multipart request never reaches multer. Refuse it with a
+ * readable 413 while the body is still only a header.
+ */
+export const MAX_IMAGE_REQUEST_BYTES = 4.5 * 1024 * 1024;
 export const MAX_RESUME_BYTES = 25 * 1024 * 1024;
 export const MAX_GALLERY_IMAGES = 10;
 export const MAX_CHAT_IMAGE_BYTES = 10 * 1024 * 1024;

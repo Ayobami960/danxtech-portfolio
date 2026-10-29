@@ -27,6 +27,9 @@ import { FileDropzone } from "../uploads/FileDropzone";
 import { cancelUpload, uploadFile } from "../uploads/uploadFile";
 import { uploadsSelectors } from "../uploads/uploadsSlice";
 
+/** Matches MAX_IMAGE_BYTES in the API: larger files are rejected with a 413. */
+const IMAGE_UPLOAD_MAX_BYTES = 4 * 1024 * 1024;
+
 const DEFAULT_VALUES: ProjectForm = {
   title: "",
   description: "",
@@ -290,8 +293,8 @@ export default function ProjectEditorPage() {
                 ) : null}
                 <FileDropzone
                   accept={ACCEPT_IMAGES}
-                  maxSizeBytes={25 * 1024 * 1024}
-                  label="Drop a cover image (JPEG, PNG, WebP, GIF, AVIF · max 25 MB)"
+                  maxSizeBytes={IMAGE_UPLOAD_MAX_BYTES}
+                  label="Drop a cover image (JPEG, PNG, WebP, GIF, AVIF · max 4 MB)"
                   hint="Replacing the cover removes the previous file."
                   onFiles={(files) => {
                     const file = files[0];
@@ -331,8 +334,8 @@ export default function ProjectEditorPage() {
                 <FileDropzone
                   accept={ACCEPT_IMAGES}
                   multiple
-                  maxSizeBytes={25 * 1024 * 1024}
-                  label="Drop gallery images (JPEG, PNG, WebP, GIF, AVIF · max 25 MB each)"
+                  maxSizeBytes={IMAGE_UPLOAD_MAX_BYTES}
+                  label="Drop gallery images (JPEG, PNG, WebP, GIF, AVIF · max 4 MB each)"
                   hint="Up to 10 images total"
                   disabled={gallery.length >= 10}
                   onFiles={(files) => {

@@ -41,9 +41,7 @@ const optionalSecret = (name: keyof typeof DEV_FALLBACKS) =>
 const booleanString = z
   .enum(["true", "false"])
   .optional()
-  .transform((value) =>
-    value === undefined ? undefined : value === "true",
-  );
+  .transform((value) => (value === undefined ? undefined : value === "true"));
 
 const trustProxyValue = z
   .string()
@@ -54,7 +52,9 @@ const trustProxyValue = z
     if (value === "false") return false;
     const hops = Number(value);
     if (!Number.isInteger(hops) || hops < 0) {
-      throw new Error("TRUST_PROXY must be true, false, or a non-negative integer.");
+      throw new Error(
+        "TRUST_PROXY must be true, false, or a non-negative integer.",
+      );
     }
     return hops;
   });
@@ -180,7 +180,8 @@ const schema = z
     }
 
     if (value.STORAGE_DRIVER === "imagekit") {
-      const urlEndpoint = value.IMAGEKIT_URL_ENDPOINT ?? value.IMAGEKIT_END_POINT;
+      const urlEndpoint =
+        value.IMAGEKIT_URL_ENDPOINT ?? value.IMAGEKIT_END_POINT;
       if (!value.IMAGEKIT_PUBLIC_KEY) {
         ctx.addIssue({
           code: "custom",
@@ -193,7 +194,8 @@ const schema = z
         ctx.addIssue({
           code: "custom",
           path: ["IMAGEKIT_PRIVATE_KEY"],
-          message: "IMAGEKIT_PRIVATE_KEY is required when STORAGE_DRIVER=imagekit.",
+          message:
+            "IMAGEKIT_PRIVATE_KEY is required when STORAGE_DRIVER=imagekit.",
         });
       }
       if (!urlEndpoint) {
@@ -203,6 +205,32 @@ const schema = z
           message:
             "IMAGEKIT_URL_ENDPOINT is required when STORAGE_DRIVER=imagekit (https://ik.imagekit.io/<imagekit_id>).",
         });
+      }
+
+      // A swap between the two keys is otherwise silent: the SDK constructor
+      // accepts both, and only the private key authenticates an upload, so the
+      // first image simply failed with a generic storage error.
+      const publicKey = value.IMAGEKIT_PUBLIC_KEY;
+      const privateKey = value.IMAGEKIT_PRIVATE_KEY;
+      if (publicKey && privateKey) {
+        if (publicKey === privateKey) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["IMAGEKIT_PRIVATE_KEY"],
+            message:
+              "IMAGEKIT_PUBLIC_KEY and IMAGEKIT_PRIVATE_KEY hold the same value; they are two different keys in the ImageKit dashboard.",
+          });
+        } else if (
+          publicKey.startsWith("private_") ||
+          privateKey.startsWith("public_")
+        ) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["IMAGEKIT_PRIVATE_KEY"],
+            message:
+              "The ImageKit keys look swapped: IMAGEKIT_PUBLIC_KEY must hold the public key (public_…) and IMAGEKIT_PRIVATE_KEY the private key (private_…).",
+          });
+        }
       }
 
       // The bare marketing host is not a delivery endpoint: every URL built
@@ -301,14 +329,7 @@ export type AppEnv = Readonly<{
       | undefined;
   };
   resumeDownloadName: string;
-  logLevel:
-    | "fatal"
-    | "error"
-    | "warn"
-    | "info"
-    | "debug"
-    | "trace"
-    | "silent";
+  logLevel: "fatal" | "error" | "warn" | "info" | "debug" | "trace" | "silent";
 }>;
 
 const loadEnv = (): AppEnv => {
@@ -344,7 +365,9 @@ const loadEnv = (): AppEnv => {
 
   if (value.COOKIE_SAMESITE === "none" && !isProduction) {
     // Browsers treat SameSite=None without Secure as invalid; surface it now.
-    throw new Error('COOKIE_SAMESITE="none" requires a production (HTTPS) build.');
+    throw new Error(
+      'COOKIE_SAMESITE="none" requires a production (HTTPS) build.',
+    );
   }
 
   const smtpHost = value.SMTP_HOST;
