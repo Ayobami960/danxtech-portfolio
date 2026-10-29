@@ -122,7 +122,8 @@ const requestIdOf = (error: unknown): string | undefined => {
 
 const messageOf = (error: unknown): string => {
   if (error instanceof Error) return error.message;
-  const message = isRecord(error) ? error.message : undefined;
+  // ImageKit reports a plain-text failure (a 500, for example) in `help` only.
+  const message = isRecord(error) ? (error.message ?? error.help) : undefined;
   return typeof message === "string" ? message : "no message";
 };
 

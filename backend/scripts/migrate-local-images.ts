@@ -4,7 +4,6 @@ import path from "node:path";
 import { eq } from "drizzle-orm";
 import { fileTypeFromBuffer } from "file-type";
 import { env } from "../src/config/env.js";
-import { MAX_IMAGE_BYTES } from "../src/config/constants.js";
 import { closeDatabase, db } from "../src/db/client.js";
 import {
   chatMessages,
@@ -12,6 +11,8 @@ import {
   projects,
 } from "../src/database/schema.js";
 import { getImageKitStorage, getStorage } from "../src/storage/index.js";
+
+const LEGACY_IMAGE_LIMIT_BYTES = 5 * 1024 * 1024;
 
 /**
  * One-off migration for images that were written to the local disk driver
@@ -133,9 +134,11 @@ const readLocalImage = async (
     throw new Error(`File not found at ${filePath}`);
   }
 
-  if (buffer.length > MAX_IMAGE_BYTES) {
+  // The ceiling in force when these files were written; the live upload limit
+  // only governs new uploads and must not skip legacy files here.
+  if (buffer.length > LEGACY_IMAGE_LIMIT_BYTES) {
     throw new Error(
-      `File is ${buffer.length} bytes, above the ${MAX_IMAGE_BYTES}-byte image limit`,
+      `File is ${buffer.length} bytes, above the ${LEGACY_IMAGE_LIMIT_BYTES}-byte legacy limit`,
     );
   }
 
