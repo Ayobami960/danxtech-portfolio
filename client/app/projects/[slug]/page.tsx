@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, ArrowUpRight, ExternalLink } from "lucide-react";
 import { FaGithub } from "react-icons/fa6";
 import ProjectGallery from "@/components/projects/ProjectGallery";
+import ProjectImage from "@/components/ui/ProjectImage";
 import SectionError from "@/components/ui/SectionError";
 import { isApiError, errorMessage, fetchProject } from "@/lib/api";
 import type { PublicProject } from "@/lib/api";
@@ -129,9 +130,10 @@ export default async function ProjectPage({ params }: PageProps) {
 
       {cover ? (
         <figure className="mt-10 overflow-hidden rounded-2xl border border-white/10 bg-[#0a1024]">
-          <img
+          <ProjectImage
             src={cover}
             alt={`${project.title} cover`}
+            icon={project.icon}
             width={1600}
             height={900}
             loading="eager"

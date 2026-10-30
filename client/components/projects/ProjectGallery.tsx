@@ -4,6 +4,7 @@ import { useState } from "react";
 import ProjectGalleryModal, {
   type GalleryProject,
 } from "@/components/ProjectGalleryModal";
+import ProjectImage from "@/components/ui/ProjectImage";
 import type { PublicProject } from "@/lib/api";
 
 /**
@@ -51,9 +52,10 @@ export default function ProjectGallery({ project }: { project: PublicProject }) 
               className="group relative block w-full overflow-hidden rounded-xl border border-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3b82f6]"
               aria-label={`Open screenshot ${index + 1} of ${images.length}`}
             >
-              <img
+              <ProjectImage
                 src={src}
                 alt={`${project.title} screenshot ${index + 1}`}
+                icon={project.icon}
                 width={800}
                 height={450}
                 loading="lazy"

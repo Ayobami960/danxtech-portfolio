@@ -1,17 +1,30 @@
 import type { ApiErrorBody } from "./types";
 
+/** Local development API; never used by a production build. */
+const LOCAL_API = "http://localhost:8000";
+
 /**
  * Base origin of the Express API, without a trailing slash.
  *
  * Server Components read `API_URL` (never shipped to the browser) and fall back
  * to the public value; browser code only ever sees `NEXT_PUBLIC_API_URL`.
+ *
+ * A production build has no localhost fallback: pointing a deployed site at
+ * http://localhost silently breaks every API path (including the resume link),
+ * so a missing variable fails loudly instead.
  */
 const resolveBaseUrl = (): string => {
   const configured =
     typeof window === "undefined"
       ? process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL
       : process.env.NEXT_PUBLIC_API_URL;
-  return (configured ?? "http://localhost:8000").replace(/\/+$/, "");
+  if (configured) return configured.replace(/\/+$/, "");
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "The API base URL is not configured. Set API_URL and NEXT_PUBLIC_API_URL in the hosting environment, then redeploy.",
+    );
+  }
+  return LOCAL_API;
 };
 
 export const API_BASE_URL = resolveBaseUrl();
