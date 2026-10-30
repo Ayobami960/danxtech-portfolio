@@ -12,7 +12,6 @@ import {
   updateConversation,
   uploadImage,
 } from "../../controllers/admin.conversation.controller.js";
-import { uploadChatImage } from "../../middleware/upload.js";
 import { validate } from "../../middleware/validate.js";
 import { z } from "zod";
 import {
@@ -22,6 +21,7 @@ import {
   inviteSchema,
   updateConversationSchema,
 } from "../../schemas/chat.schemas.js";
+import { signedUploadResultSchema } from "../../schemas/project.schemas.js";
 
 const idParams = z.object({ id: z.uuid() }).strict();
 
@@ -50,10 +50,10 @@ export const registerConversationRoutes = (router: Router): void => {
     validate({ params: idParams }),
     markRead,
   );
+  // JSON only: the admin already uploaded the image to Cloudinary.
   router.post(
     "/conversations/:id/images",
-    validate({ params: idParams }),
-    uploadChatImage,
+    validate({ params: idParams, body: signedUploadResultSchema }),
     uploadImage,
   );
   router.patch(

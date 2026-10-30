@@ -13,18 +13,16 @@ import { useFieldArray, useForm } from "react-hook-form";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
+  useAddProjectGalleryMutation,
   useCreateProjectMutation,
   useDeleteGalleryImageMutation,
   useGetProjectQuery,
   useReorderGalleryMutation,
+  useSetProjectCoverMutation,
   useUpdateProjectMutation,
-  useUploadDocumentMutation,
-  useDeleteDocumentMutation,
 } from "../../api/adminApi";
 import { errorMessage, getFieldErrors } from "../../api/errors";
-import type { UploadedDocument } from "../../api/types";
 import { resolveMediaUrl } from "../../app/config";
-import { useAppDispatch, useAppSelector } from "../../app/hooks";
 import { Card } from "../../components/Card";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ColorField, EmojiField, TagInput } from "../../components/Fields";
@@ -33,16 +31,18 @@ import { SortableList } from "../../components/SortableList";
 import { ErrorState, LoadingList } from "../../components/States";
 import { projectSchema, type ProjectForm } from "../../lib/schemas";
 import { useUnsavedWarning } from "../../lib/useUnsavedWarning";
-import { ACCEPT_IMAGES, ACCEPT_PDF } from "../uploads/accept";
+import { ACCEPT_CLOUDINARY_IMAGES, ACCEPT_PDF } from "../uploads/accept";
 import { FileDropzone } from "../uploads/FileDropzone";
-import { readDataUrl } from "../uploads/readDataUrl";
-import { cancelUpload, uploadFile } from "../uploads/uploadFile";
-import { uploadsSelectors } from "../uploads/uploadsSlice";
+import {
+  deleteFromCloudinary,
+  MAX_UPLOAD_BYTES,
+  uploadToCloudinary,
+} from "../../lib/cloudinary";
 
-/** Matches MAX_IMAGE_BYTES in the API: larger files are rejected with a 413. */
-const IMAGE_UPLOAD_MAX_BYTES = 4 * 1024 * 1024;
-/** Matches MAX_DOCUMENT_BYTES in the API (base64 JSON adds ~33%). */
-const DOCUMENT_MAX_BYTES = 3 * 1024 * 1024;
+/** Matches MAX_UPLOAD_BYTES in lib/cloudinary: the helper rejects anything above. */
+const IMAGE_UPLOAD_MAX_BYTES = MAX_UPLOAD_BYTES;
+const DOCUMENT_MAX_BYTES = MAX_UPLOAD_BYTES;
+const MAX_GALLERY_IMAGES = 10;
 
 const formatBytes = (bytes: number): string =>
   bytes >= 1024 * 1024
@@ -65,18 +65,22 @@ export default function ProjectEditorPage() {
   const { id } = useParams<{ id: string }>();
   const isNew = !id;
   const navigate = useNavigate();
-  const dispatch = useAppDispatch();
   const project = useGetProjectQuery(id ?? "", { skip: isNew });
   const [create, createState] = useCreateProjectMutation();
   const [update, updateState] = useUpdateProjectMutation();
+  const [setCover, setCoverState] = useSetProjectCoverMutation();
+  const [addGallery, addGalleryState] = useAddProjectGalleryMutation();
   const [reorderGallery] = useReorderGalleryMutation();
   const [deleteImage] = useDeleteGalleryImageMutation();
-  const [uploadDocument] = useUploadDocumentMutation();
-  const [deleteDocument] = useDeleteDocumentMutation();
+
   const [removingImage, setRemovingImage] = useState<string | null>(null);
-  const [uploadingDocument, setUploadingDocument] = useState(false);
   const [removingDocument, setRemovingDocument] = useState(false);
-  const uploads = useAppSelector((state) => uploadsSelectors.selectAll(state.uploads));
+  const [uploadingCover, setUploadingCover] = useState(false);
+  const [uploadingGallery, setUploadingGallery] = useState(false);
+  const [uploadingDocument, setUploadingDocument] = useState(false);
+  const [coverProgress, setCoverProgress] = useState(0);
+  const [galleryProgress, setGalleryProgress] = useState(0);
+  const [documentProgress, setDocumentProgress] = useState(0);
 
   const form = useForm<ProjectForm>({
     resolver: zodResolver(projectSchema),
@@ -101,6 +105,9 @@ export default function ProjectEditorPage() {
     });
   }, [project.data, form]);
 
+  const uploading =
+    uploadingCover || uploadingGallery || uploadingDocument || setCoverState.isLoading;
+
   const onSubmit = form.handleSubmit(async (values) => {
     const payload = {
       ...values,
@@ -112,11 +119,22 @@ export default function ProjectEditorPage() {
         const created = await create(payload).unwrap();
         toast.success("Project created — add images next");
         navigate(`/projects/${created.id}`, { replace: true });
-      } else if (id) {
-        await update({ id, patch: payload }).unwrap();
-        toast.success("Project saved");
-        form.reset(values);
+        return;
       }
+      if (!id) return;
+      const updated = await update({ id, patch: payload }).unwrap();
+      toast.success("Project saved");
+      form.reset({
+        title: updated.title,
+        description: updated.description,
+        icon: updated.icon,
+        accentColor: updated.accentColor,
+        tech: updated.tech,
+        stats: updated.stats,
+        liveUrl: updated.liveUrl ?? "",
+        githubUrl: updated.githubUrl ?? "",
+        published: updated.published,
+      });
     } catch (error) {
       const fields = getFieldErrors(error);
       for (const [path, message] of Object.entries(fields)) {
@@ -127,38 +145,75 @@ export default function ProjectEditorPage() {
   });
 
   /**
-   * Two calls by design: the PDF goes to the base64 document endpoint, then its
-   * metadata is attached to the project. The API rejects a document URL that
-   * does not belong to the configured storage endpoint.
+   * Every upload below is browser -> Cloudinary: first `POST /uploads/sign`, then
+   * the file goes straight to Cloudinary. Only `{ url, publicId }` is sent to the
+   * API, so no upload passes through the backend's request-body limit.
    */
+  const attachCover = async (file: File): Promise<void> => {
+    if (!id) return;
+    setUploadingCover(true);
+    setCoverProgress(0);
+    let uploaded: { url: string; publicId: string } | null = null;
+    try {
+      uploaded = await uploadToCloudinary(file, "cover", setCoverProgress);
+      await setCover({ id, url: uploaded.url, publicId: uploaded.publicId }).unwrap();
+      toast.success("Cover updated");
+    } catch (error) {
+      // The upload can succeed while the save fails; discard the orphan.
+      if (uploaded) {
+        await deleteFromCloudinary(uploaded.publicId).catch(() => undefined);
+      }
+      toast.error(errorMessage(error, "Could not upload the cover image."));
+    } finally {
+      setUploadingCover(false);
+    }
+  };
+
+  const attachGallery = async (files: File[]): Promise<void> => {
+    if (!id) return;
+    setUploadingGallery(true);
+    setGalleryProgress(0);
+    const uploaded: Array<{ url: string; publicId: string }> = [];
+    try {
+      for (const file of files) {
+        const result = await uploadToCloudinary(file, "gallery", setGalleryProgress);
+        uploaded.push({ url: result.url, publicId: result.publicId });
+      }
+      await addGallery({ id, results: uploaded }).unwrap();
+      toast.success("Gallery updated");
+    } catch (error) {
+      await Promise.all(
+        uploaded.map((item) =>
+          deleteFromCloudinary(item.publicId).catch(() => undefined),
+        ),
+      );
+      toast.error(errorMessage(error, "Could not upload the gallery images."));
+    } finally {
+      setUploadingGallery(false);
+    }
+  };
+
   const attachDocument = async (file: File): Promise<void> => {
     if (!id) return;
     setUploadingDocument(true);
-    let stored: UploadedDocument | null = null;
+    setDocumentProgress(0);
     try {
-      const dataUrl = await readDataUrl(file);
-      stored = await uploadDocument({ fileName: file.name, dataUrl }).unwrap();
+      // The `resume` preset overwrites one fixed public_id, so a failed attach
+      // must never delete it: that object may be the live site resume.
+      const result = await uploadToCloudinary(file, "resume", setDocumentProgress);
       await update({
         id,
         patch: {
           document: {
-            url: stored.url,
-            fileId: stored.fileId,
-            key: stored.key,
-            name: stored.name,
-            sizeBytes: stored.sizeBytes,
+            url: result.url,
+            publicId: result.publicId,
+            name: file.name,
+            sizeBytes: file.size,
           },
         },
       }).unwrap();
       toast.success("PDF attached to the project");
     } catch (error) {
-      // The upload can succeed while attaching it fails: remove the orphan so it
-      // does not stay in ImageKit. Best-effort; the original error is the one shown.
-      if (stored?.fileId) {
-        await deleteDocument({ fileId: stored.fileId, key: stored.key })
-          .unwrap()
-          .catch(() => undefined);
-      }
       toast.error(errorMessage(error, "Could not upload the PDF."));
     } finally {
       setUploadingDocument(false);
@@ -169,12 +224,6 @@ export default function ProjectEditorPage() {
   if (!isNew && project.error)
     return <ErrorState error={project.error} onRetry={project.refetch} />;
 
-  const coverUploads = uploads.filter(
-    (entry) => entry.kind === "cover" && entry.targetId === id,
-  );
-  const galleryUploads = uploads.filter(
-    (entry) => entry.kind === "gallery" && entry.targetId === id,
-  );
   const gallery = project.data?.gallery ?? [];
   const resolve = resolveMediaUrl;
 
@@ -197,10 +246,16 @@ export default function ProjectEditorPage() {
               type="button"
               className="btn btn-primary"
               onClick={() => void onSubmit()}
-              disabled={createState.isLoading || updateState.isLoading}
+              disabled={
+                createState.isLoading || updateState.isLoading || uploading
+              }
             >
               <Save size={15} />
-              {createState.isLoading || updateState.isLoading ? "Saving…" : "Save"}
+              {createState.isLoading || updateState.isLoading
+                ? "Saving…"
+                : uploading
+                  ? "Uploading…"
+                  : "Save"}
             </button>
           </>
         }
@@ -354,42 +409,21 @@ export default function ProjectEditorPage() {
                   />
                 ) : null}
                 <FileDropzone
-                  accept={ACCEPT_IMAGES}
+                  accept={ACCEPT_CLOUDINARY_IMAGES}
                   maxSizeBytes={IMAGE_UPLOAD_MAX_BYTES}
-                  label="Drop a cover image (JPEG, PNG, WebP, GIF, AVIF · max 4 MB)"
-                  hint="Replacing the cover removes the previous file."
+                  label="Drop a cover image (JPEG, PNG or WebP · max 5 MB)"
+                  hint="Uploads go straight to Cloudinary; replacing removes the previous file."
+                  disabled={uploadingCover || setCoverState.isLoading}
                   onFiles={(files) => {
                     const file = files[0];
-                    if (!file) return;
-                    void dispatch(uploadFile({ file, kind: "cover", targetId: id }))
-                      .unwrap()
-                      .then(() => toast.success("Cover updated"))
-                      .catch((error: unknown) => toast.error(errorMessage(error)));
+                    if (file) void attachCover(file);
                   }}
                 />
-                {coverUploads.map((entry) => (
-                  <div key={entry.id} className="mt-2 rounded-lg border border-white/10 p-2">
-                    <div className="flex justify-between text-[11px] text-[#9db0c6]">
-                      <span className="truncate">{entry.name}</span>
-                      <span>{entry.progress}%</span>
-                    </div>
-                    <div className="mt-1 h-1 overflow-hidden rounded bg-white/10">
-                      <div
-                        className="h-full bg-[#3b82f6]"
-                        style={{ width: `${entry.progress}%` }}
-                      />
-                    </div>
-                    {entry.status === "uploading" ? (
-                      <button
-                        type="button"
-                        className="mt-1 text-[10px] text-red-300"
-                        onClick={() => cancelUpload(entry.id)}
-                      >
-                        Cancel
-                      </button>
-                    ) : null}
-                  </div>
-                ))}
+                {uploadingCover || setCoverState.isLoading ? (
+                  <p className="mt-2 text-[11px] text-[#9db0c6]">
+                    Uploading cover… {coverProgress}%
+                  </p>
+                ) : null}
               </Card>
 
               <Card title="project_document">
@@ -432,10 +466,10 @@ export default function ProjectEditorPage() {
                   maxSizeBytes={DOCUMENT_MAX_BYTES}
                   label={
                     project.data?.document
-                      ? "Drop a replacement PDF (max 3 MB)"
-                      : "Drop a project PDF (max 3 MB)"
+                      ? "Drop a replacement PDF (max 5 MB)"
+                      : "Drop a project PDF (max 5 MB)"
                   }
-                  hint="Replacing the document removes the previous file."
+                  hint="Uploads go straight to Cloudinary; replacing removes the previous file."
                   disabled={uploadingDocument}
                   onFiles={(files) => {
                     const file = files[0];
@@ -443,47 +477,39 @@ export default function ProjectEditorPage() {
                   }}
                 />
                 {uploadingDocument ? (
-                  <p className="mt-2 text-[11px] text-[#9db0c6]">Uploading…</p>
+                  <p className="mt-2 text-[11px] text-[#9db0c6]">
+                    Uploading PDF… {documentProgress}%
+                  </p>
                 ) : null}
               </Card>
 
-              <Card title={`gallery_${gallery.length}/10`}>
+              <Card title={`gallery_${gallery.length}/${MAX_GALLERY_IMAGES}`}>
                 <FileDropzone
-                  accept={ACCEPT_IMAGES}
+                  accept={ACCEPT_CLOUDINARY_IMAGES}
                   multiple
                   maxSizeBytes={IMAGE_UPLOAD_MAX_BYTES}
-                  label="Drop gallery images (JPEG, PNG, WebP, GIF, AVIF · max 4 MB each)"
-                  hint="Up to 10 images total"
-                  disabled={gallery.length >= 10}
+                  label="Drop gallery images (JPEG, PNG or WebP · max 5 MB each)"
+                  hint={`Up to ${MAX_GALLERY_IMAGES} images total`}
+                  disabled={
+                    gallery.length >= MAX_GALLERY_IMAGES ||
+                    uploadingGallery ||
+                    addGalleryState.isLoading
+                  }
                   onFiles={(files) => {
-                    const room = Math.max(0, 10 - gallery.length);
-                    for (const file of files.slice(0, room)) {
-                      void dispatch(uploadFile({ file, kind: "gallery", targetId: id }))
-                        .unwrap()
-                        .catch((error: unknown) => toast.error(errorMessage(error)));
-                    }
+                    const room = Math.max(0, MAX_GALLERY_IMAGES - gallery.length);
                     if (files.length > room) {
-                      toast.error("Only 10 gallery images are allowed.");
+                      toast.error(
+                        `Only ${MAX_GALLERY_IMAGES} gallery images are allowed.`,
+                      );
+                      return;
                     }
+                    void attachGallery(files);
                   }}
                 />
-                {galleryUploads.length > 0 ? (
-                  <div className="mt-3 space-y-1.5">
-                    {galleryUploads.map((entry) => (
-                      <div key={entry.id} className="rounded-lg border border-white/10 p-2">
-                        <div className="flex justify-between text-[11px] text-[#9db0c6]">
-                          <span className="truncate">{entry.name}</span>
-                          <span>{entry.progress}%</span>
-                        </div>
-                        <div className="mt-1 h-1 overflow-hidden rounded bg-white/10">
-                          <div
-                            className="h-full bg-[#3b82f6]"
-                            style={{ width: `${entry.progress}%` }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                {uploadingGallery ? (
+                  <p className="mt-2 text-[11px] text-[#9db0c6]">
+                    Uploading gallery images… {galleryProgress}%
+                  </p>
                 ) : null}
 
                 {gallery.length > 0 ? (
@@ -617,6 +643,7 @@ export default function ProjectEditorPage() {
         open={removingDocument}
         title="Remove the project PDF?"
         description="The file is removed from storage and cannot be recovered."
+        busy={updateState.isLoading}
         onClose={() => setRemovingDocument(false)}
         onConfirm={() => {
           if (!id) return;

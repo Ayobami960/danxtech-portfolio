@@ -8,7 +8,6 @@ import { adminApi } from "../api/adminApi";
 import authReducer, { loggedOut, sessionExpired } from "../features/auth/authSlice";
 import { bootstrapSession, login } from "../features/auth/thunks";
 import uiReducer, { resetUi } from "../features/ui/uiSlice";
-import uploadsReducer, { uploadsCleared } from "../features/uploads/uploadsSlice";
 import realtimeReducer, { resetRealtime } from "../realtime/realtimeSlice";
 import {
   connectRealtime,
@@ -36,7 +35,6 @@ listener.startListening({
     api.dispatch(adminApi.util.resetApiState());
     api.dispatch(resetRealtime());
     api.dispatch(resetUi());
-    api.dispatch(uploadsCleared());
     if (!consumeRemoteLogout()) broadcastLogout();
   },
 });
@@ -64,7 +62,6 @@ export const store = configureStore({
     [adminApi.reducerPath]: adminApi.reducer,
     auth: authReducer,
     ui: uiReducer,
-    uploads: uploadsReducer,
     realtime: realtimeReducer,
   },
   middleware: (getDefault) =>

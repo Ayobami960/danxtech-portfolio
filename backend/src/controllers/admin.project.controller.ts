@@ -4,6 +4,7 @@ import { paginated, type Pagination } from "../lib/pagination.js";
 import { body as readBody, params, query } from "../lib/request.js";
 import type {
   CreateProjectInput,
+  SignedUploadResultInput,
   UpdateProjectInput,
 } from "../schemas/project.schemas.js";
 import {
@@ -59,17 +60,18 @@ export const featureProject = asyncHandler(async (request, response) => {
   response.status(200).json(await feature(request, id));
 });
 
+/** JSON only: the browser already uploaded the cover to Cloudinary. */
 export const uploadCover = asyncHandler(async (request, response) => {
   const { id } = params<{ id: string }>(request);
-  response.status(200).json(await setCover(request, id, request.file));
+  const uploaded = readBody<SignedUploadResultInput>(request);
+  response.status(200).json(await setCover(request, id, uploaded));
 });
 
+/** JSON only: the browser already uploaded the gallery images to Cloudinary. */
 export const uploadGallery = asyncHandler(async (request, response) => {
   const { id } = params<{ id: string }>(request);
-  const files = Array.isArray(request.files)
-    ? (request.files as Express.Multer.File[])
-    : undefined;
-  response.status(201).json(await addGalleryImages(request, id, files));
+  const { results } = readBody<{ results: SignedUploadResultInput[] }>(request);
+  response.status(201).json(await addGalleryImages(request, id, results));
 });
 
 export const reorderProjectGallery = asyncHandler(async (request, response) => {

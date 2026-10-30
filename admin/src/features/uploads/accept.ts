@@ -6,6 +6,12 @@
  */
 export const ACCEPT_PDF = "application/pdf";
 export const ACCEPT_IMAGES = "image/jpeg,image/png,image/webp,image/gif,image/avif";
+/**
+ * What the Cloudinary signed presets accept for covers and gallery images. The
+ * upload helper enforces the same list, so the picker never offers a file the
+ * upload would reject.
+ */
+export const ACCEPT_CLOUDINARY_IMAGES = "image/jpeg,image/png,image/webp";
 
 /**
  * Browsers report an empty `file.type` (or "application/octet-stream") for

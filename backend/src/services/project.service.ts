@@ -1,9 +1,7 @@
 import type { Request } from "express";
-import { randomUUID } from "node:crypto";
 import { AppError, ERROR_CODES, conflict, notFound } from "../lib/errors.js";
 import { slugify } from "../lib/slug.js";
 import { logger } from "../config/logger.js";
-import { env } from "../config/env.js";
 import { REVALIDATE_TAGS } from "../config/constants.js";
 import {
   addProjectImages,
@@ -25,16 +23,12 @@ import {
   type ProjectWithImages,
 } from "../repositories/project.repository.js";
 import { audit } from "../repositories/audit-writer.js";
-import {
-  deleteStoredFile,
-  getStorage,
-  publicMediaUrl,
-} from "../storage/index.js";
-import { processImage } from "./image.service.js";
-import { sha256Hex } from "../lib/crypto.js";
+import { deleteStoredFile, publicMediaUrl } from "../storage/index.js";
+import { storageKeyFromPublicId, validateSignedUpload } from "../lib/uploads.js";
 import { contentUpdated } from "./revalidate.service.js";
 import type {
   CreateProjectInput,
+  SignedUploadResultInput,
   UpdateProjectInput,
 } from "../schemas/project.schemas.js";
 import type { Project } from "../database/schema.js";
@@ -61,8 +55,9 @@ export type PublicProject = {
 type ProjectDocumentInput = NonNullable<CreateProjectInput["document"]>;
 
 /**
- * The document endpoint is the only supported source for a project PDF: the
- * admin uploads there first, then attaches the metadata it returned.
+ * The signed-upload endpoint is the only supported source for a project PDF: the
+ * admin uploads directly to Cloudinary first, then attaches the metadata it
+ * returned. The backend never sees the file bytes.
  */
 const documentColumns = (
   document: ProjectDocumentInput,
@@ -74,19 +69,12 @@ const documentColumns = (
   | "documentName"
   | "documentSizeBytes"
 > => {
-  const endpoint = env.storage.urlEndpoint.replace(/\/+$/, "");
-  if (!document.url.startsWith(`${endpoint}/`)) {
-    throw new AppError(
-      400,
-      ERROR_CODES.VALIDATION_ERROR,
-      "Upload the document first: document.url must be a file from this project's image storage.",
-    );
-  }
+  const { url, publicId } = validateSignedUpload(document);
 
   return {
-    documentUrl: document.url,
-    documentFileId: document.fileId,
-    documentStorageKey: document.key,
+    documentUrl: url,
+    documentFileId: publicId,
+    documentStorageKey: storageKeyFromPublicId(publicId),
     documentName: document.name,
     documentSizeBytes: document.sizeBytes,
   };
@@ -110,7 +98,7 @@ export const toPublicProject = (project: ProjectWithImages): PublicProject => ({
   stats: project.stats,
   liveUrl: project.liveUrl,
   githubUrl: project.githubUrl,
-  documentUrl: publicMediaUrl(project.documentStorageKey, project.documentUrl),
+  documentUrl: project.documentUrl,
   documentName: project.documentName,
   imageParent: versionedMediaUrl(
     publicMediaUrl(project.coverStorageKey, project.coverImage),
@@ -135,13 +123,12 @@ export const toAdminProject = (project: ProjectWithImages) => ({
   liveUrl: project.liveUrl,
   githubUrl: project.githubUrl,
   coverImage: publicMediaUrl(project.coverStorageKey, project.coverImage),
-  /** ImageKit fileId for coverImage (null for legacy or external images). */
+  /** Cloudinary public_id for coverImage (null for legacy or external images). */
   coverFileId: project.coverFileId,
-  document: project.documentStorageKey
+  document: project.documentUrl
     ? {
-        url: publicMediaUrl(project.documentStorageKey, project.documentUrl),
-        fileId: project.documentFileId,
-        key: project.documentStorageKey,
+        url: project.documentUrl,
+        publicId: project.documentFileId,
         name: project.documentName ?? "document.pdf",
         sizeBytes: project.documentSizeBytes ?? 0,
       }
@@ -154,7 +141,7 @@ export const toAdminProject = (project: ProjectWithImages) => ({
   gallery: project.images.map((image) => ({
     id: image.id,
     url: publicMediaUrl(image.storageKey, image.url),
-    /** ImageKit fileId, used by the admin to delete the image. */
+    /** Cloudinary public_id, used by the admin to delete the image. */
     fileId: image.fileId,
     sortOrder: image.sortOrder,
   })),
@@ -199,8 +186,7 @@ export const create = async (
   request: Request,
   input: CreateProjectInput,
 ): Promise<ReturnType<typeof toAdminProject>> => {
-  const sortOrder =
-    input.sortOrder ?? (await maxProjectSortOrder()) + 1;
+  const sortOrder = input.sortOrder ?? (await maxProjectSortOrder()) + 1;
   const project = await createProject({
     slug: await uniqueSlug(input.title),
     title: input.title,
@@ -265,14 +251,14 @@ export const update = async (
   // only orphans a file, which is preferable to failing a committed update.
   const documentReplaced =
     document !== undefined &&
-    (existing.documentStorageKey !== null ||
-      existing.documentFileId !== null) &&
+    (existing.documentFileId !== null || existing.documentStorageKey !== null) &&
     existing.documentStorageKey !== updated.documentStorageKey;
 
   if (documentReplaced) {
     await deleteStoredFile({
       fileId: existing.documentFileId,
       key: existing.documentStorageKey,
+      resourceType: "raw",
     }).catch((error: unknown) => {
       logger.warn(
         { err: error, key: existing.documentStorageKey },
@@ -356,39 +342,34 @@ export const reorder = async (
   contentUpdated("projects", [...REVALIDATE_TAGS.projects]);
 };
 
+/**
+ * Attach a cover image the admin already uploaded to Cloudinary. The previous
+ * object is deleted only after the row is written, so a failed update never
+ * leaves the project pointing at a deleted file.
+ */
 export const setCover = async (
   request: Request,
   id: string,
-  file: Express.Multer.File | undefined,
+  uploaded: SignedUploadResultInput,
 ): Promise<ReturnType<typeof toAdminProject>> => {
   const project = await findProjectById(id);
   if (!project) throw notFound("Project not found.");
-  if (!file) {
-    throw new AppError(
-      400,
-      ERROR_CODES.VALIDATION_ERROR,
-      "An image file is required in the `file` field.",
-    );
-  }
 
-  const storage = getStorage();
-  const processed = await processImage(file.buffer, file.originalname);
-  const key = `projects/${id}/${randomUUID()}.webp`;
-  const stored = await storage.put(key, processed.buffer, processed.contentType);
+  const validated = validateSignedUpload(uploaded);
+  const key = storageKeyFromPublicId(validated.publicId);
 
   try {
     await updateProject(id, {
-      coverImage: stored.url,
-      coverFileId: stored.fileId,
-      coverStorageKey: stored.key,
-      coverOriginalName: file.originalname.slice(0, 255) || null,
-      coverMimeType: processed.contentType,
-      coverSizeBytes: processed.buffer.length,
-      coverSha256: sha256Hex(processed.buffer),
+      coverImage: validated.url,
+      coverFileId: validated.publicId,
+      coverStorageKey: key,
+      coverOriginalName: null,
+      coverMimeType: null,
+      coverSizeBytes: null,
+      coverSha256: null,
     });
   } catch (error) {
-    // Never leave an orphaned upload behind when the row could not be written.
-    await deleteStoredFile(stored).catch(() => undefined);
+    await deleteStoredFile({ fileId: validated.publicId }).catch(() => undefined);
     throw error;
   }
 
@@ -408,10 +389,7 @@ export const setCover = async (
     action: "project.cover.update",
     entity: "project",
     entityId: id,
-    meta: {
-      sizeBytes: processed.buffer.length,
-      mimeType: processed.contentType,
-    },
+    meta: { publicId: validated.publicId },
   });
   contentUpdated("projects", [...REVALIDATE_TAGS.projects]);
   return getAdminById(id);
@@ -420,63 +398,48 @@ export const setCover = async (
 export const addGalleryImages = async (
   request: Request,
   id: string,
-  files: Express.Multer.File[] | undefined,
+  uploaded: SignedUploadResultInput[],
 ): Promise<ReturnType<typeof toAdminProject>> => {
   const project = await findProjectById(id);
   if (!project) throw notFound("Project not found.");
-  if (!files || files.length === 0) {
+  if (uploaded.length === 0) {
     throw new AppError(
       400,
       ERROR_CODES.VALIDATION_ERROR,
-      "At least one image is required in the `files` field.",
+      "At least one image result is required.",
     );
   }
 
-  const processed = await Promise.all(
-    files.map(async (file) => ({
-      file,
-      image: await processImage(file.buffer, file.originalname),
-    })),
-  );
-
-  const storage = getStorage();
-  const uploaded: Array<{
+  const validated: Array<{
     url: string;
-    fileId: string | null;
+    fileId: string;
     storageKey: string;
     sortOrder: number;
     originalName: string;
     mimeType: string;
     sizeBytes: number;
-    sha256: string;
   }> = [];
 
   try {
     const startOrder = (await maxImageSortOrder(id)) + 1;
-    for (const [index, item] of processed.entries()) {
-      const key = `projects/${id}/${randomUUID()}.webp`;
-      const stored = await storage.put(
-        key,
-        item.image.buffer,
-        item.image.contentType,
-      );
-      uploaded.push({
-        url: stored.url,
-        fileId: stored.fileId,
-        storageKey: stored.key,
+    for (const [index, item] of uploaded.entries()) {
+      const validatedItem = validateSignedUpload(item);
+      validated.push({
+        url: validatedItem.url,
+        fileId: validatedItem.publicId,
+        storageKey: storageKeyFromPublicId(validatedItem.publicId),
         sortOrder: startOrder + index,
-        originalName: item.file.originalname.slice(0, 255) || `image-${index + 1}.webp`,
-        mimeType: item.image.contentType,
-        sizeBytes: item.image.buffer.length,
-        sha256: sha256Hex(item.image.buffer),
+        originalName: `gallery-${index + 1}.webp`,
+        mimeType: "image/webp",
+        sizeBytes: 0,
       });
     }
-    await addProjectImages(id, uploaded);
+    await addProjectImages(id, validated);
   } catch (error) {
     // Never leave orphaned uploads behind when the rows could not be written.
     await Promise.all(
-      uploaded.map((item) =>
-        deleteStoredFile(item).catch(() => undefined),
+      validated.map((item) =>
+        deleteStoredFile({ fileId: item.fileId }).catch(() => undefined),
       ),
     );
     throw error;
@@ -486,7 +449,7 @@ export const addGalleryImages = async (
     action: "project.gallery.add",
     entity: "project",
     entityId: id,
-    meta: { count: uploaded.length },
+    meta: { count: validated.length },
   });
   contentUpdated("projects", [...REVALIDATE_TAGS.projects]);
   return getAdminById(id);
@@ -529,14 +492,14 @@ export const removeGalleryImage = async (
     meta: { imageId },
   });
 
-  try {
-    if (!image.storageKey.startsWith("external/")) {
-      await deleteStoredFile({ fileId: image.fileId, key: image.storageKey });
-    }
-  } catch (error) {
-    logger.warn(
-      { err: error, key: image.storageKey },
-      "Failed to delete gallery image file",
+  if (!image.storageKey.startsWith("external/")) {
+    await deleteStoredFile({ fileId: image.fileId, key: image.storageKey }).catch(
+      (error: unknown) => {
+        logger.warn(
+          { err: error, key: image.storageKey },
+          "Failed to delete gallery image file",
+        );
+      },
     );
   }
 

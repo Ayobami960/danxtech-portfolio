@@ -7,6 +7,7 @@ import type {
   InviteInput,
   UpdateConversationInput,
 } from "../schemas/chat.schemas.js";
+import type { SignedUploadResult } from "../lib/uploads.js";
 import * as chat from "../services/chat.service.js";
 
 export const listConversations = asyncHandler(async (request, response) => {
@@ -46,9 +47,10 @@ export const sendMessage = asyncHandler(async (request, response) => {
 export const uploadImage = asyncHandler(async (request, response) => {
   const { id } = params<{ id: string }>(request);
   await chat.adminGetConversation(id);
+  const body = readBody<SignedUploadResult>(request);
   response
     .status(201)
-    .json(await chat.storeChatImage(request, id, request.file));
+    .json(await chat.storeChatImage(request, id, body));
 });
 
 export const markRead = asyncHandler(async (request, response) => {

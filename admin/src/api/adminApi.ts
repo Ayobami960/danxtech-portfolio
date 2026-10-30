@@ -23,7 +23,6 @@ import type {
   SkillGroup,
   Stats,
   TwoFactorStatus,
-  UploadedDocument,
 } from "./types";
 import { onRealtime } from "../realtime/socket";
 
@@ -433,26 +432,46 @@ export const adminApi = createApi({
       ],
     }),
 
-    /** Base64 JSON upload of a project PDF (max 3 MB decoded). */
-    uploadDocument: build.mutation<
-      UploadedDocument,
-      { fileName: string; dataUrl: string }
+    /** Attach a cover the browser already uploaded to Cloudinary. */
+    setProjectCover: build.mutation<
+      Project,
+      { id: string; url: string; publicId: string }
     >({
-      query: (body) => ({ url: "/admin/documents", method: "POST", body }),
-    }),
-    /** Remove an upload that was never attached to a project. */
-    deleteDocument: build.mutation<void, { fileId: string; key: string }>({
-      query: ({ fileId, key }) => ({
-        url: `/admin/documents/${encodeURIComponent(fileId)}`,
-        method: "DELETE",
-        params: { key },
+      query: ({ id, url, publicId }) => ({
+        url: `/admin/projects/${id}/cover`,
+        method: "POST",
+        body: { url, publicId },
       }),
+      invalidatesTags: (_result, _error, { id }) => [
+        { type: "Project", id },
+        { type: "Project", id: "LIST" },
+      ],
+    }),
+    /** Attach gallery images the browser already uploaded to Cloudinary. */
+    addProjectGallery: build.mutation<
+      Project,
+      { id: string; results: Array<{ url: string; publicId: string }> }
+    >({
+      query: ({ id, results }) => ({
+        url: `/admin/projects/${id}/gallery`,
+        method: "POST",
+        body: { results },
+      }),
+      invalidatesTags: (_result, _error, { id }) => [
+        { type: "Project", id },
+        { type: "ProjectImage", id },
+        { type: "Project", id: "LIST" },
+      ],
     }),
 
     /* ---------------------------------- resume ----------------------------------- */
     getResume: build.query<ResumeInfo | null, void>({
       query: () => "/admin/resume",
       providesTags: ["Resume"],
+    }),
+    updateResume: build.mutation<ResumeInfo, { url: string; publicId: string }>({
+      query: (body) => ({ url: "/admin/resume", method: "PUT", body }),
+      invalidatesTags: ["Resume", "Stats"],
     }),
     deleteResume: build.mutation<void, void>({
       query: () => ({ url: "/admin/resume", method: "DELETE" }),
@@ -788,9 +807,10 @@ export const {
   useReorderProjectsMutation,
   useReorderGalleryMutation,
   useDeleteGalleryImageMutation,
-  useUploadDocumentMutation,
-  useDeleteDocumentMutation,
+  useSetProjectCoverMutation,
+  useAddProjectGalleryMutation,
   useGetResumeQuery,
+  useUpdateResumeMutation,
   useDeleteResumeMutation,
   useGetConversationsQuery,
   useGetUnreadConversationsQuery,

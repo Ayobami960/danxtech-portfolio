@@ -7,8 +7,8 @@ import {
 import type {
   DocumentDeleteParams,
   DocumentDeleteQuery,
-  DocumentUploadInput,
 } from "../schemas/document.schemas.js";
+import type { SignedUploadResult } from "../lib/uploads.js";
 import {
   deleteUploadedDocument,
   uploadPortfolioDocument,
@@ -16,10 +16,11 @@ import {
 
 /**
  * POST /api/v1/admin/documents
- * Body: { fileName?: string, dataUrl: "data:application/pdf;base64,..." }
+ * Body: { url: string, publicId: string } — returned by the signed upload flow.
+ * The backend never sees the file bytes.
  */
 export const uploadDocument = asyncHandler(async (request, response) => {
-  const input = readBody<DocumentUploadInput>(request);
+  const input = readBody<SignedUploadResult>(request);
   response.status(201).json(await uploadPortfolioDocument(request, input));
 });
 

@@ -1,9 +1,8 @@
 // resume.service.ts
 import type { Request } from "express";
 import { Readable } from "node:stream";
-import { AppError, ERROR_CODES, notFound } from "../lib/errors.js";
+import { notFound } from "../lib/errors.js";
 import { logger } from "../config/logger.js";
-import { sha256Hex } from "../lib/crypto.js";
 import {
   deleteResume,
   getResume,
@@ -14,8 +13,9 @@ import {
 import { audit } from "../repositories/audit-writer.js";
 import { REVALIDATE_TAGS } from "../config/constants.js";
 import { contentUpdated } from "./revalidate.service.js";
-import { getStorage } from "../storage/index.js";
-import { assertPdf } from "./pdf.service.js";
+import { deleteStoredFile } from "../storage/index.js";
+import { validateSignedUpload } from "../lib/uploads.js";
+import type { SignedUploadResultInput } from "../schemas/project.schemas.js";
 import type { ResumeMetadata as ResumeRow } from "../repositories/resume.repository.js";
 
 export type ResumeMetadata =
@@ -37,7 +37,7 @@ export const toPublicMetadata = (resume: ResumeRow | null): ResumeMetadata => {
   return {
     available: true,
     fileName: resume.originalName,
-    sizeBytes: resume.sizeBytes,
+    sizeBytes: resume.sizeBytes ?? 0,
     updatedAt: resume.updatedAt,
     downloadUrl: resumeDownloadUrl(resume.updatedAt),
   };
@@ -53,59 +53,58 @@ export const readAdminMetadata = async () => {
     id: resume.id,
     fileName: resume.originalName,
     mimeType: resume.mimeType,
-    sizeBytes: resume.sizeBytes,
+    sizeBytes: resume.sizeBytes ?? 0,
     downloadCount: resume.downloadCount,
     uploadedAt: resume.uploadedAt,
     updatedAt: resume.updatedAt,
+    publicId: resume.publicId,
   };
 };
 
 /**
- * Safe replacement flow:
- *   1. validate the magic bytes
- *   2. write the bytes to the singleton row (one transaction)
- *   3. only then delete the previous ImageKit object, if the row predates the
- *      move to PostgreSQL
- * Any failure before (2) leaves the old resume intact.
+ * Safe replacement flow for the signed-upload path:
+ *   1. validate the signed Cloudinary result (portfolio/ publicId)
+ *   2. write the singleton row (one transaction)
+ *   3. only then delete the previous Cloudinary object, if it is a different
+ *      public_id. The `resume` preset always uploads to the same public_id, so
+ *      a replacement has already overwritten the old object in place.
  */
 export const uploadResume = async (
   request: Request,
-  file: Express.Multer.File | undefined,
+  uploaded: SignedUploadResultInput,
 ): Promise<ResumeMetadata> => {
-  if (!file) {
-    throw new AppError(
-      400,
-      ERROR_CODES.VALIDATION_ERROR,
-      "A PDF file is required in the `file` field.",
-    );
-  }
-  assertPdf(file.buffer, file.originalname);
-
+  const validated = validateSignedUpload(uploaded);
   const previous = await getResume();
+
   const saved = await upsertResume({
-    data: file.buffer,
-    originalName: file.originalname.slice(0, 255) || "resume.pdf",
+    url: validated.url,
+    publicId: validated.publicId,
+    originalName: "resume.pdf",
     mimeType: "application/pdf",
-    sizeBytes: file.size,
-    sha256: sha256Hex(file.buffer),
   });
 
-  if (previous?.storageKey) {
-    await getStorage()
-      .delete(previous.storageKey)
-      .catch((error: unknown) => {
-        logger.warn(
-          { err: error, key: previous.storageKey },
-          "Failed to delete the legacy resume file",
-        );
-      });
+  const replaceable =
+    previous?.publicId !== null &&
+    previous?.publicId !== undefined &&
+    previous.publicId !== validated.publicId;
+
+  if (replaceable) {
+    await deleteStoredFile({
+      fileId: previous.publicId,
+      resourceType: "raw",
+    }).catch((error: unknown) => {
+      logger.warn(
+        { err: error, publicId: previous.publicId },
+        "Failed to delete the replaced resume object",
+      );
+    });
   }
 
   await audit(request, {
     action: "resume.upload",
     entity: "resume",
     entityId: "resume",
-    meta: { sizeBytes: saved.sizeBytes },
+    meta: { publicId: validated.publicId },
   });
   contentUpdated("resume", [...REVALIDATE_TAGS.resume]);
 
@@ -123,38 +122,48 @@ export const removeResume = async (request: Request): Promise<void> => {
   });
   contentUpdated("resume", [...REVALIDATE_TAGS.resume]);
 
-  if (removed.storageKey) {
+  if (removed.publicId) {
     try {
-      await getStorage().delete(removed.storageKey);
+      await deleteStoredFile({ fileId: removed.publicId, resourceType: "raw" });
     } catch (error) {
       logger.warn(
-        { err: error, key: removed.storageKey },
-        "Failed to delete the legacy resume file",
+        { err: error, publicId: removed.publicId },
+        "Failed to delete the resume object",
       );
     }
   }
 };
 
-export type DownloadHandle = {
-  resume: ResumeRow;
-  stream: Readable;
-};
+/**
+ * Where the download route should send the browser. Cloudinary-hosted rows are
+ * a redirect; legacy rows still stream their bytes out of PostgreSQL.
+ */
+export type ResumeSource =
+  | { kind: "url"; resume: ResumeRow; url: string }
+  | { kind: "stream"; resume: ResumeRow; stream: Readable };
 
-export const getDownload = async (): Promise<DownloadHandle> => {
-  const [resume, document] = await Promise.all([
-    getResume(),
-    getResumeDocument(),
-  ]);
-  if (!resume || !document) throw notFound("No resume is available.");
+export const getDownload = async (): Promise<ResumeSource> => {
+  const resume = await getResume();
+  if (!resume) throw notFound("No resume is available.");
 
-  // Bytes come straight from PostgreSQL now; nothing is read from disk.
-  return { resume, stream: Readable.from(document.data) };
+  if (resume.url) {
+    return { kind: "url", resume, url: resume.url };
+  }
+
+  const document = await getResumeDocument();
+  if (!document) throw notFound("No resume is available.");
+
+  return {
+    kind: "stream",
+    resume,
+    stream: Readable.from(document.data),
+  };
 };
 
 export const countDownload = async (): Promise<void> => {
   await incrementResumeDownloadCount();
 };
 
-// Local-only convenience for tests that need a fresh read stream type.
+/** Local-only convenience for tests that need a fresh read stream type. */
 export const isReadable = (value: unknown): value is Readable =>
   typeof value === "object" && value !== null && "pipe" in value;

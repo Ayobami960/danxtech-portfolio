@@ -63,14 +63,26 @@ const safeFileName = (name: string): string =>
   name.replace(/[^\w.\- ]+/g, "_").slice(0, 180) || "resume.pdf";
 
 export const downloadResume = asyncHandler(async (request, response, next) => {
-  const { resume, stream } = await getDownload();
+  const source = await getDownload();
 
-  const etag = `"${resume.sha256}"`;
-  response.setHeader("ETag", etag);
   response.setHeader(
     "Cache-Control",
     "public, max-age=300, must-revalidate",
   );
+
+  // Cloudinary-hosted rows: hand the browser the delivery URL instead of
+  // proxying the PDF through the API (which also dodges the body-size limit).
+  if (source.kind === "url") {
+    if (request.method !== "HEAD") {
+      await countDownload();
+    }
+    response.redirect(302, source.url);
+    return;
+  }
+
+  const { resume, stream } = source;
+  const etag = `"${resume.sha256 ?? ""}"`;
+  response.setHeader("ETag", etag);
 
   if (etagMatches(request.get("if-none-match"), etag)) {
     stream.destroy();
@@ -86,7 +98,7 @@ export const downloadResume = asyncHandler(async (request, response, next) => {
     "Content-Disposition",
     `${disposition}; filename="${safeFileName(env.resumeDownloadName)}"`,
   );
-  response.setHeader("Content-Length", String(resume.sizeBytes));
+  response.setHeader("Content-Length", String(resume.sizeBytes ?? 0));
 
   if (request.method === "HEAD") {
     stream.destroy();

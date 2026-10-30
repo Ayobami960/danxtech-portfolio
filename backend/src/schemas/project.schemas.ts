@@ -8,21 +8,48 @@ const accentColor = z
 
 const tag = (max: number) => z.string().trim().min(1).max(max);
 
+/** Cloudinary public_ids accepted from the admin all live under portfolio/. */
+export const cloudinaryPublicId = z
+  .string()
+  .trim()
+  .min(1)
+  .max(255)
+  .refine(
+    (value) => value.startsWith("portfolio/") && !value.includes(".."),
+    "publicId must start with portfolio/.",
+  );
+
 /**
- * A PDF uploaded through `POST /api/v1/admin/documents`. The client sends the
- * metadata ImageKit returned; the service checks the URL belongs to the
- * configured endpoint so a project can never point at an arbitrary file.
+ * JSON result of a direct browser -> Cloudinary signed upload. The backend
+ * never receives the file bytes: it only stores the URL and public_id that
+ * Cloudinary returned for the upload it signed.
+ */
+export const signedUploadResultSchema = z
+  .object({
+    url: z.url().refine((value) => value.startsWith("https://"), {
+      message: "url must use https.",
+    }),
+    publicId: cloudinaryPublicId,
+  })
+  .strict();
+
+export const signedUploadListSchema = z
+  .object({
+    results: z.array(signedUploadResultSchema).min(1).max(10),
+  })
+  .strict();
+
+/**
+ * A PDF attached to a project. Its bytes live in Cloudinary, uploaded through
+ * the `resume` signed preset (the only raw preset); the columns store the
+ * delivery URL, the public_id used for deletion, and display metadata.
  */
 const projectDocument = z
   .object({
-    url: z
-      .url()
-      .refine(
-        (value) => value.startsWith("https://"),
-        "document.url must use https.",
-      ),
-    fileId: z.string().trim().min(1).max(255).nullable(),
-    key: z.string().trim().min(1).max(1024),
+    url: z.url().refine((value) => value.startsWith("https://"), {
+      message: "document.url must use https.",
+    }),
+    publicId: cloudinaryPublicId,
     name: z.string().trim().min(1).max(255),
     sizeBytes: z.number().int().positive().max(MAX_DOCUMENT_BYTES),
   })
@@ -74,3 +101,4 @@ export const updateProjectSchema = z
 
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;
+export type SignedUploadResultInput = z.infer<typeof signedUploadResultSchema>;

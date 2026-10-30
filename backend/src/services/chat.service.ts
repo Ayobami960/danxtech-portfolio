@@ -1,5 +1,4 @@
 import type { Request } from "express";
-import { randomUUID } from "node:crypto";
 import { AppError, ERROR_CODES, conflict, notFound } from "../lib/errors.js";
 import { escapeHtml } from "../lib/html.js";
 import { sha256Hex } from "../lib/crypto.js";
@@ -14,8 +13,11 @@ import {
   INVITE_TTL_DAYS,
   MAX_PAGE_SIZE,
 } from "../config/constants.js";
-import { getStorage } from "../storage/index.js";
-import { processImage } from "./image.service.js";
+import {
+  storageKeyFromPublicId,
+  type SignedUploadResult,
+  validateSignedUpload,
+} from "../lib/uploads.js";
 import {
   countRecentMessages,
   createConversation,
@@ -811,39 +813,32 @@ export const guestPresence = async (
 };
 
 /**
- * Store a chat image in ImageKit (never on disk) and return the key the message
- * row records. Keys are scoped to the conversation they belong to.
+ * Store a chat image in Cloudinary (never on disk) using a signed result the
+ * browser returned from the direct-to-Cloudinary upload. Keys are scoped to the
+ * conversation they belong to.
  */
 export const storeChatImage = async (
   request: Request,
   conversationId: string,
-  file: Express.Multer.File | undefined,
-): Promise<{ key: string; url: string; mimeType: string }> => {
-  if (!file) {
-    throw new AppError(
-      400,
-      ERROR_CODES.VALIDATION_ERROR,
-      "An image file is required in the `file` field.",
-    );
-  }
-
-  const processed = await processImage(file.buffer, file.originalname);
-  const key = `chat/${conversationId}/${randomUUID()}.webp`;
-  const storage = getStorage();
-  // Bytes are already in memory (multer.memoryStorage): nothing touches disk.
-  const stored = await storage.put(key, processed.buffer, processed.contentType);
+  uploaded: SignedUploadResult,
+): Promise<{ key: string; url: string; mimeType: string; fileId: string }> => {
+  // Admin replies attach an image the browser already uploaded to Cloudinary
+  // with the `gallery` signed preset; only the metadata reaches the API here.
+  const validated = validateSignedUpload(uploaded);
+  const key = storageKeyFromPublicId(validated.publicId);
 
   await audit(request, {
     action: "chat.image.upload",
     entity: "conversation",
     entityId: conversationId,
-    meta: { sizeBytes: processed.buffer.length },
+    meta: { publicId: validated.publicId },
   });
 
   return {
-    key: stored.key,
-    url: stored.url,
-    mimeType: processed.contentType,
+    key,
+    url: validated.url,
+    mimeType: "image/webp",
+    fileId: validated.publicId,
   };
 };
 

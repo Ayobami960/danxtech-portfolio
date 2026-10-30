@@ -29,7 +29,7 @@ const start = async (): Promise<void> => {
 
   // Non-blocking: scheduled right after listening, never awaited, so a slow
   // storage provider can neither delay boot nor crash it. Env-gated
-  // (STORAGE_INTEGRITY_CHECK) and ImageKit-only.
+  // (STORAGE_INTEGRITY_CHECK); continues to apply after the ImageKit driver is removed.
   scheduleStorageIntegrityCheck();
 
   // Retries with backoff, which covers a Neon database waking from idle.

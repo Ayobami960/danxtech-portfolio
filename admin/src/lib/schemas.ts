@@ -51,6 +51,11 @@ export const heroSchema = z.object({
     .max(10),
 });
 
+/**
+ * Project fields only. The cover, gallery and PDF are uploaded straight to
+ * Cloudinary from here and attached with their own requests, so they are not
+ * part of this form's payload.
+ */
 export const projectSchema = z.object({
   title: z.string().trim().min(2, "At least 2 characters.").max(80),
   description: z.string().max(600),
@@ -62,6 +67,8 @@ export const projectSchema = z.object({
   githubUrl: httpsUrl,
   published: z.boolean(),
 });
+
+export type ProjectFormValues = z.infer<typeof projectSchema>;
 
 export const aboutSchema = z.object({
   paragraphs: z

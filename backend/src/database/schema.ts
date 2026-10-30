@@ -400,14 +400,22 @@ export const resumes = pgTable(
   "resumes",
   {
     id: text("id").primaryKey().default("resume"),
-    /** PDF bytes live in PostgreSQL; kept out of every list query. */
+    /**
+     * Cloudinary delivery URL (`secure_url`) returned by the signed upload.
+     * Null on legacy rows that still keep their bytes in `data`.
+     */
+    url: text("url"),
+    /** Cloudinary public_id, used to delete the object through the API. */
+    publicId: text("public_id"),
+    /** Legacy bytes path: kept nullable so a Cloudinary row stores metadata only. */
     data: bytea("data"),
     /** Legacy ImageKit key; only set on rows uploaded before the move. */
     storageKey: text("storage_key"),
     originalName: varchar("original_name", { length: 255 }).notNull(),
     mimeType: varchar("mime_type", { length: 100 }).notNull().default("application/pdf"),
-    sizeBytes: integer("size_bytes").notNull(),
-    sha256: varchar("sha256", { length: 64 }).notNull(),
+    /** Null for Cloudinary-hosted rows: Cloudinary reports the real size. */
+    sizeBytes: integer("size_bytes"),
+    sha256: varchar("sha256", { length: 64 }),
     downloadCount: integer("download_count").notNull().default(0),
     uploadedAt: tz("uploaded_at").notNull().defaultNow(),
     updatedAt: updatedAt(),

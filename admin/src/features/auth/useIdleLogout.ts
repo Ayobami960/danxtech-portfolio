@@ -11,9 +11,6 @@ const ACTIVITY_BROADCAST_MS = 15_000;
 export const useIdleLogout = () => {
   const dispatch = useAppDispatch();
   const status = useAppSelector((state) => state.auth.status);
-  const uploading = useAppSelector((state) =>
-    state.uploads.ids.some((id) => state.uploads.entities[id]?.status === "uploading"),
-  );
   const lastActivity = useRef(0);
   const lastBroadcast = useRef(0);
   const [warning, setWarning] = useState(false);
@@ -55,10 +52,6 @@ export const useIdleLogout = () => {
   useEffect(() => {
     if (status !== "authenticated") return;
     const timer = setInterval(() => {
-      if (uploading) {
-        lastActivity.current = Date.now();
-        return;
-      }
       const idle = Date.now() - lastActivity.current;
       if (idle >= IDLE_MS) {
         setWarning(false);
@@ -68,7 +61,7 @@ export const useIdleLogout = () => {
       }
     }, 20_000);
     return () => clearInterval(timer);
-  }, [status, uploading, dispatch]);
+  }, [status, dispatch]);
 
   const staySignedIn = async (): Promise<void> => {
     await apiRequest("/auth/me");

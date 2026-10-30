@@ -64,24 +64,15 @@ export type Settings = {
 export type ProjectImage = {
   id: string;
   url: string | null;
+  /** Cloudinary public_id, used to delete the image. */
+  fileId: string | null;
   sortOrder: number;
 };
 
-/** Metadata of a PDF uploaded through `POST /admin/documents`. */
-export type UploadedDocument = {
-  fileId: string | null;
-  key: string;
-  url: string;
-  name: string;
-  mimeType: string;
-  sizeBytes: number;
-};
-
-/** The subset stored on a project. */
+/** Metadata of the PDF attached to a project (its bytes live in Cloudinary). */
 export type ProjectDocument = {
   url: string;
-  fileId: string | null;
-  key: string;
+  publicId: string | null;
   name: string;
   sizeBytes: number;
 };
@@ -116,6 +107,7 @@ export type ProjectInput = {
   stats: string[];
   liveUrl: string | null;
   githubUrl: string | null;
+  published: boolean;
   /** `null` removes the attached PDF; omitted leaves it untouched. */
   document?: ProjectDocument | null;
 };

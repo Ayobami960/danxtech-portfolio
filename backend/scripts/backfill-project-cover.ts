@@ -3,21 +3,21 @@ import { eq } from "drizzle-orm";
 import { closeDatabase, db } from "../src/db/client.js";
 import { projects } from "../src/database/schema.js";
 import { findProjectBySlug } from "../src/repositories/project.repository.js";
-import { getImageKitStorage, publicMediaUrl } from "../src/storage/index.js";
+import { publicMediaUrl } from "../src/storage/index.js";
 
 /**
- * One-off repair for a project whose cover row disagrees with ImageKit.
+ * One-off repair for a project whose cover row disagrees with Cloudinary.
  *
  *   tsx scripts/backfill-project-cover.ts                       # dry run
  *   tsx scripts/backfill-project-cover.ts --apply               # write the row
  *   tsx scripts/backfill-project-cover.ts --slug=<slug>
- *   tsx scripts/backfill-project-cover.ts --key=<imagekit path>
+ *   tsx scripts/backfill-project-cover.ts --key=<cloudinary path>
  *
  * Rules:
  *   - dry run by default; only --apply writes, and only the target row;
  *   - the write happens in a single transaction;
- *   - nothing is written unless the target file is confirmed in ImageKit, so a
- *     404 is never traded for another 404.
+ *   - nothing is written unless the target file is confirmed in Cloudinary, so
+ *     a 404 is never traded for another 404.
  */
 
 const DEFAULT_SLUG = "real-estate-platform";
@@ -32,7 +32,7 @@ type Args = {
 type Presence = "ok" | "missing" | "unknown";
 
 const usage =
-  "Usage: tsx scripts/backfill-project-cover.ts [--apply] [--slug=<slug>] [--key=<imagekit path>]";
+  "Usage: tsx scripts/backfill-project-cover.ts [--apply] [--slug=<slug>] [--key=<cloudinary path>]";
 
 const parseArgs = (argv: readonly string[]): Args => {
   let apply = false;
@@ -74,22 +74,6 @@ const presenceOf = async (key: string): Promise<Presence> => {
   }
 };
 
-const listProjectFiles = async (projectId: string): Promise<string[] | null> => {
-  const imagekit = getImageKitStorage();
-  if (!imagekit) return null;
-
-  try {
-    return await imagekit.listFolderPaths(`/projects/${projectId}`);
-  } catch (error) {
-    console.error(
-      `Could not list /projects/${projectId} in ImageKit: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    );
-    return null;
-  }
-};
-
 const main = async (): Promise<void> => {
   const args = parseArgs(process.argv.slice(2));
 
@@ -107,15 +91,7 @@ const main = async (): Promise<void> => {
 
   console.log(`${args.apply ? "APPLY" : "DRY RUN"} — ${project.slug} (${project.id})`);
   console.log(`  cover_image       : ${before.coverImage ?? "(null)"}`);
-  console.log(`  cover_storage_key : ${before.coverStorageKey ?? "(null)"}`);
-
-  const files = await listProjectFiles(project.id);
-  if (files === null) {
-    console.log(`  ImageKit          : folder not listed`);
-  } else {
-    console.log(`  ImageKit          : ${files.length} file(s) in /projects/${project.id}`);
-    for (const path of files) console.log(`    - ${path}`);
-  }
+  console.log(`  cover_storage_key : ${before.coverStorageKey ?? "(null)"}`);    console.log(`  Folder listing    : not available (no Cloudinary-equivalent in this script)`);
 
   let targetKey: string | undefined;
 
@@ -134,26 +110,12 @@ const main = async (): Promise<void> => {
     }
   }
 
-  if (!targetKey && files !== null && files.length > 0) {
-    const webp = files.filter((path) => path.toLowerCase().endsWith(".webp"));
-    const candidates = webp.length > 0 ? webp : files;
-    const first = candidates[0];
-    if (candidates.length === 1 && first !== undefined) {
-      targetKey = first.replace(/^\/+/, "");
-      console.log(`  Using the only file in the folder: ${first}`);
-    } else {
-      console.error(
-        `  ${candidates.length} candidate file(s); pass --key=<imagekit path> to choose one.`,
-      );
-    }
-  }
-
   if (!targetKey) {
     console.error(
-      "No file exists in ImageKit for this cover, so there is nothing to backfill.",
+      "No stored cover key and no --key provided, so there is nothing to backfill.",
     );
     console.error(
-      "Re-upload the cover through the admin flow (Projects → cover upload) so the row and ImageKit are written together.",
+      "Re-upload the cover through the admin flow (Projects → cover upload) so the row and Cloudinary are written together.",
     );
     process.exitCode = 1;
     return;
@@ -179,7 +141,7 @@ const main = async (): Promise<void> => {
   console.log(`  cover_storage_key : ${after.coverStorageKey}`);
 
   if (!changed) {
-    console.log("Nothing to backfill: the row already matches ImageKit.");
+    console.log("Nothing to backfill: the row already matches Cloudinary.");
     return;
   }
 

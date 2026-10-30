@@ -114,16 +114,20 @@ const schema = z
 
     TURNSTILE_SECRET: optionalString,
 
-    /** Report database keys whose files are missing from ImageKit at boot. */
+    /** Report database keys whose files are missing from Cloudinary at boot. */
     STORAGE_INTEGRITY_CHECK: booleanString,
 
-    /** ImageKit is the only media storage provider (see storage/index.ts). */
-    IMAGEKIT_PUBLIC_KEY: optionalString,
-    IMAGEKIT_PRIVATE_KEY: optionalString,
-    /** Delivery endpoint: https://ik.imagekit.io/<imagekit_id>. */
-    IMAGEKIT_URL_ENDPOINT: z.url().optional(),
-    /** Legacy name for IMAGEKIT_URL_ENDPOINT, still accepted. */
-    IMAGEKIT_END_POINT: z.url().optional(),
+    /**
+     * Cloudinary cloud name, e.g. "my-portfolio".
+     * Shared with the browser's direct-to-Cloudinary signed uploads.
+     */
+    CLOUDINARY_CLOUD_NAME: z.string().min(1, "CLOUDINARY_CLOUD_NAME is required."),
+    /** Public API key. Sent to the browser as part of the signed upload params. */
+    CLOUDINARY_API_KEY: z.string().min(1, "CLOUDINARY_API_KEY is required."),
+    /** Private API secret. Only used server-side to sign uploads and deletes. */
+    CLOUDINARY_API_SECRET: z.string().min(1, "CLOUDINARY_API_SECRET is required."),
+    /** Optional custom delivery domain, e.g. https://cdn.example.com. */
+    CLOUDINARY_DELIVERY_URL: z.url().optional(),
 
     RESUME_DOWNLOAD_NAME: z
       .string()
@@ -141,88 +145,29 @@ const schema = z
       });
     }
 
-    const urlEndpoint = value.IMAGEKIT_URL_ENDPOINT ?? value.IMAGEKIT_END_POINT;
-    const missingStorage: string[] = [];
-    if (!value.IMAGEKIT_PUBLIC_KEY) missingStorage.push("IMAGEKIT_PUBLIC_KEY");
-    if (!value.IMAGEKIT_PRIVATE_KEY) missingStorage.push("IMAGEKIT_PRIVATE_KEY");
-    if (!urlEndpoint) missingStorage.push("IMAGEKIT_URL_ENDPOINT");
-
-    // ImageKit is the only storage provider, so a missing value is fatal rather
-    // than a silent fall back to a disk that does not survive an invocation.
-    if (missingStorage.length > 0) {
+    const cloudName = value.CLOUDINARY_CLOUD_NAME;
+    const apiKey = value.CLOUDINARY_API_KEY;
+    const apiSecret = value.CLOUDINARY_API_SECRET;
+    if (!cloudName) {
       ctx.addIssue({
         code: "custom",
-        path: ["IMAGEKIT_PRIVATE_KEY"],
-        message: `ImageKit is the only media storage provider. Missing: ${missingStorage.join(", ")}.`,
+        path: ["CLOUDINARY_CLOUD_NAME"],
+        message: "CLOUDINARY_CLOUD_NAME is required.",
       });
     }
-
-    // A swap between the two keys is otherwise silent: the SDK constructor
-    // accepts both, and only the private key authenticates an upload, so the
-    // first image simply failed with a generic storage error.
-    const publicKey = value.IMAGEKIT_PUBLIC_KEY;
-    const privateKey = value.IMAGEKIT_PRIVATE_KEY;
-    if (publicKey && privateKey) {
-      if (publicKey === privateKey) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["IMAGEKIT_PRIVATE_KEY"],
-          message:
-            "IMAGEKIT_PUBLIC_KEY and IMAGEKIT_PRIVATE_KEY hold the same value; they are two different keys in the ImageKit dashboard.",
-        });
-      } else if (
-        publicKey.startsWith("private_") ||
-        privateKey.startsWith("public_")
-      ) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["IMAGEKIT_PRIVATE_KEY"],
-          message:
-            "The ImageKit keys look swapped: IMAGEKIT_PUBLIC_KEY must hold the public key (public_…) and IMAGEKIT_PRIVATE_KEY the private key (private_…).",
-        });
-      }
+    if (!apiKey) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["CLOUDINARY_API_KEY"],
+        message: "CLOUDINARY_API_KEY is required.",
+      });
     }
-
-    // The bare marketing host is not a delivery endpoint: every URL built
-    // from it 404s. A custom domain on the account (e.g. cdn.example.com) is
-    // still accepted, but the default endpoint must look like
-    // https://ik.imagekit.io/<imagekit_id>.
-    if (urlEndpoint) {
-      let host: string;
-      let pathname: string;
-      try {
-        const parsed = new URL(urlEndpoint);
-        host = parsed.hostname.toLowerCase();
-        pathname = parsed.pathname;
-      } catch {
-        host = "";
-        pathname = "";
-      }
-      if (host === "imagekit.io" || host === "www.imagekit.io") {
-        ctx.addIssue({
-          code: "custom",
-          path: ["IMAGEKIT_URL_ENDPOINT"],
-          message:
-            "IMAGEKIT_URL_ENDPOINT must be your ImageKit URL endpoint (https://ik.imagekit.io/<imagekit_id>), not the ImageKit website, otherwise uploaded images are not reachable.",
-        });
-      } else if (host === "ik.imagekit.io" && pathname === "/") {
-        ctx.addIssue({
-          code: "custom",
-          path: ["IMAGEKIT_URL_ENDPOINT"],
-          message:
-            "IMAGEKIT_URL_ENDPOINT must include your ImageKit id, e.g. https://ik.imagekit.io/<imagekit_id>. The value https://ik.imagekit.io/ is the base host and is not a valid delivery endpoint.",
-        });
-      } else if (
-        host?.endsWith(".imagekit.io") &&
-        !pathname.startsWith("/")
-      ) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["IMAGEKIT_URL_ENDPOINT"],
-          message:
-            "IMAGEKIT_URL_ENDPOINT must end with the ImageKit delivery path, e.g. https://ik.imagekit.io/<imagekit_id> (a path of /<imagekit_id>).",
-        });
-      }
+    if (!apiSecret) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["CLOUDINARY_API_SECRET"],
+        message: "CLOUDINARY_API_SECRET is required.",
+      });
     }
 
     for (const field of ["ADMIN_EMAIL", "OWNER_EMAIL"] as const) {
@@ -276,12 +221,12 @@ export type AppEnv = Readonly<{
   turnstileSecret: string | undefined;
   /** Defaults to true, except under NODE_ENV=test. */
   storageIntegrityCheck: boolean;
-  /** ImageKit is the only media storage provider. */
-  storage: {
-    /** The SDK constructor requires it; server-side uploads only use the private key. */
-    publicKey: string;
-    privateKey: string;
-    urlEndpoint: string;
+  /** Cloudinary cloud + keys. The browser also receives CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY as part of a signed upload. */
+  cloudinary: {
+    cloudName: string;
+    apiKey: string;
+    apiSecret: string;
+    deliveryUrl: string | undefined;
   };
   resumeDownloadName: string;
   logLevel: "fatal" | "error" | "warn" | "info" | "debug" | "trace" | "silent";
@@ -382,11 +327,11 @@ const loadEnv = (): AppEnv => {
     turnstileSecret: value.TURNSTILE_SECRET,
     storageIntegrityCheck:
       value.STORAGE_INTEGRITY_CHECK ?? value.NODE_ENV !== "test",
-    storage: {
-      publicKey: value.IMAGEKIT_PUBLIC_KEY as string,
-      privateKey: value.IMAGEKIT_PRIVATE_KEY as string,
-      urlEndpoint: (value.IMAGEKIT_URL_ENDPOINT ??
-        value.IMAGEKIT_END_POINT) as string,
+    cloudinary: {
+      cloudName: value.CLOUDINARY_CLOUD_NAME as string,
+      apiKey: value.CLOUDINARY_API_KEY as string,
+      apiSecret: value.CLOUDINARY_API_SECRET as string,
+      deliveryUrl: value.CLOUDINARY_DELIVERY_URL as string | undefined,
     },
     resumeDownloadName: value.RESUME_DOWNLOAD_NAME,
     logLevel: value.LOG_LEVEL,
@@ -395,3 +340,5 @@ const loadEnv = (): AppEnv => {
 
 export const env: AppEnv = loadEnv();
 export const isProduction = env.isProduction;
+
+export type CloudinaryEnv = AppEnv["cloudinary"];

@@ -1,10 +1,13 @@
 import { Download, ExternalLink, FileText, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { useDeleteResumeMutation, useGetResumeQuery } from "../../api/adminApi";
+import {
+  useDeleteResumeMutation,
+  useGetResumeQuery,
+  useUpdateResumeMutation,
+} from "../../api/adminApi";
 import { errorMessage } from "../../api/errors";
 import { API_ORIGIN } from "../../app/config";
-import { useAppDispatch, useAppSelector } from "../../app/hooks";
 import { Card } from "../../components/Card";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { PageHeader } from "../../components/PageHeader";
@@ -12,24 +15,23 @@ import { EmptyState, ErrorState, LoadingList } from "../../components/States";
 import { formatBytes, formatDate } from "../../lib/format";
 import { ACCEPT_PDF, isAcceptedFile } from "../uploads/accept";
 import { FileDropzone } from "../uploads/FileDropzone";
-import { cancelUpload, uploadFile } from "../uploads/uploadFile";
-import { uploadsSelectors } from "../uploads/uploadsSlice";
+import { MAX_UPLOAD_BYTES, uploadToCloudinary } from "../../lib/cloudinary";
 
-const MAX_PDF_BYTES = 25 * 1024 * 1024;
+/** Matches the limit the upload helper enforces for the resume preset. */
+const MAX_PDF_BYTES = MAX_UPLOAD_BYTES;
 
 export default function ResumePage() {
-  const dispatch = useAppDispatch();
   const query = useGetResumeQuery();
   const [remove, removeState] = useDeleteResumeMutation();
+  const [update, updateState] = useUpdateResumeMutation();
   const [confirming, setConfirming] = useState(false);
-  const uploads = useAppSelector((state) =>
-    uploadsSelectors.selectAll(state.uploads).filter((entry) => entry.kind === "resume"),
-  );
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const info = query.data && query.data.available ? query.data : null;
   const downloadUrl = `${API_ORIGIN}/api/v1/resume/download`;
   const previewUrl = `${API_ORIGIN}/api/v1/resume/download?inline=1`;
-  const uploading = uploads.some((entry) => entry.status === "uploading");
 
   const onFiles = (files: File[]): void => {
     const file = files[0];
@@ -39,13 +41,33 @@ export default function ResumePage() {
       return;
     }
     if (file.size > MAX_PDF_BYTES) {
-      toast.error("The resume must be 25 MB or smaller.");
+      toast.error(`The resume must be ${formatBytes(MAX_PDF_BYTES)} or smaller.`);
       return;
     }
-    void dispatch(uploadFile({ file, kind: "resume" }))
-      .unwrap()
-      .then(() => toast.success(info ? "Resume replaced" : "Resume uploaded"))
-      .catch((error: unknown) => toast.error(errorMessage(error, "Upload failed.")));
+
+    void (async () => {
+      setUploading(true);
+      setProgress(0);
+      setUploadError(null);
+      try {
+        // Browser -> Cloudinary, then the API stores only the result. No PDF
+        // bytes pass through the backend. The preset overwrites one fixed
+        // public_id, so the previous object is replaced in place and is never
+        // deleted afterwards.
+        const result = await uploadToCloudinary(file, "resume", setProgress);
+        await update({
+          url: result.url,
+          publicId: result.publicId,
+        }).unwrap();
+        toast.success(info ? "Resume replaced" : "Resume uploaded");
+      } catch (error) {
+        const message = errorMessage(error, "Upload failed.");
+        setUploadError(message);
+        toast.error(message);
+      } finally {
+        setUploading(false);
+      }
+    })();
   };
 
   return (
@@ -132,44 +154,20 @@ export default function ResumePage() {
             <FileDropzone
               accept={ACCEPT_PDF}
               maxSizeBytes={MAX_PDF_BYTES}
-              label="Drop a PDF here (max 25 MB)"
+              label={`Drop a PDF here (max ${formatBytes(MAX_PDF_BYTES)})`}
               hint={
                 info
-                  ? "Replacing is safe: the new file is stored before the old one is deleted."
-                  : "PDF only. The file is validated on the client and the server."
+                  ? "Uploading replaces the file Cloudinary already serves."
+                  : "PDF only. The file goes straight to Cloudinary, never through the API."
               }
-              disabled={uploading}
+              disabled={uploading || updateState.isLoading}
               onFiles={onFiles}
             />
-            {uploads.length > 0 ? (
-              <div className="mt-3 space-y-2">
-                {uploads.map((entry) => (
-                  <div key={entry.id} className="rounded-lg border border-white/10 p-2">
-                    <div className="flex justify-between text-[11px] text-[#9db0c6]">
-                      <span className="truncate">{entry.name}</span>
-                      <span>{entry.status === "done" ? "done" : `${entry.progress}%`}</span>
-                    </div>
-                    <div className="mt-1 h-1 overflow-hidden rounded bg-white/10">
-                      <div
-                        className="h-full bg-[#3b82f6]"
-                        style={{ width: `${entry.progress}%` }}
-                      />
-                    </div>
-                    {entry.status === "uploading" ? (
-                      <button
-                        type="button"
-                        className="mt-1 text-[10px] text-red-300"
-                        onClick={() => cancelUpload(entry.id)}
-                      >
-                        Cancel
-                      </button>
-                    ) : null}
-                    {entry.error ? (
-                      <p className="mt-1 text-[10px] text-red-300">{entry.error}</p>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
+            {uploading ? (
+              <p className="mt-3 text-[11px] text-[#9db0c6]">Uploading… {progress}%</p>
+            ) : null}
+            {uploadError ? (
+              <p className="mt-3 text-[11px] text-red-300">{uploadError}</p>
             ) : null}
             <p className="mt-4 text-[11px] text-[#5f7189]">
               The public resume button is hidden automatically while no file exists.

@@ -8,6 +8,8 @@ export type ResumeMetadata = Omit<Resume, "data">;
 
 const metadataColumns = {
   id: resumes.id,
+  url: resumes.url,
+  publicId: resumes.publicId,
   storageKey: resumes.storageKey,
   originalName: resumes.originalName,
   mimeType: resumes.mimeType,
@@ -53,36 +55,49 @@ export const getResumeDocument = async (): Promise<ResumeDocument | null> => {
     data: row.data,
     originalName: row.originalName,
     mimeType: row.mimeType,
-    sizeBytes: row.sizeBytes,
-    sha256: row.sha256,
+    sizeBytes: row.sizeBytes ?? row.data.byteLength,
+    sha256: row.sha256 ?? "",
   };
 };
 
 /**
- * Replace the singleton row. `storage_key` is cleared because the document now
- * lives in the database; the caller deletes the previous ImageKit object only
- * after this write succeeds.
+ * Replace the singleton row with metadata for a PDF that already lives in
+ * Cloudinary. Legacy byte columns are cleared, so a row never mixes the two
+ * storage models. The caller deletes the previous Cloudinary object only after
+ * this write succeeds.
  */
 export const upsertResume = async (input: {
-  data: Buffer;
+  url: string;
+  publicId: string;
   originalName: string;
   mimeType: string;
-  sizeBytes: number;
-  sha256: string;
 }): Promise<ResumeMetadata> => {
   const now = new Date();
   const rows = await db
     .insert(resumes)
-    .values({ ...input, storageKey: null, id: RESUME_ID, uploadedAt: now })
+    .values({
+      id: RESUME_ID,
+      url: input.url,
+      publicId: input.publicId,
+      originalName: input.originalName,
+      mimeType: input.mimeType,
+      data: null,
+      storageKey: null,
+      sizeBytes: null,
+      sha256: null,
+      uploadedAt: now,
+    })
     .onConflictDoUpdate({
       target: resumes.id,
       set: {
-        data: input.data,
+        url: input.url,
+        publicId: input.publicId,
         originalName: input.originalName,
         mimeType: input.mimeType,
-        sizeBytes: input.sizeBytes,
-        sha256: input.sha256,
+        data: null,
         storageKey: null,
+        sizeBytes: null,
+        sha256: null,
         uploadedAt: now,
         updatedAt: now,
       },

@@ -93,5 +93,8 @@ export const errorMessage = (error: unknown, fallback = "Something went wrong.")
   ) {
     return error.message;
   }
+  // Plain `Error`s are thrown by the upload helper (Cloudinary's own message),
+  // so surface those instead of the generic fallback.
+  if (error instanceof Error && error.message) return error.message;
   return fallback;
 };

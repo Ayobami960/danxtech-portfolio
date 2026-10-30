@@ -40,3 +40,11 @@ export const requireAuth: RequestHandler = (request, _response, next) => {
     }
   })();
 };
+
+/**
+ * Alias used by routes that live outside the admin router (for example
+ * `POST /api/v1/uploads/sign`). Every authenticated principal is the portfolio
+ * owner, so the check is identical to `requireAuth`; the separate name keeps the
+ * intent explicit at those call sites.
+ */
+export const requireAdmin: RequestHandler = requireAuth;

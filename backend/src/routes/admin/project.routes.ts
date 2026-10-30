@@ -12,11 +12,6 @@ import {
   uploadCover,
   uploadGallery,
 } from "../../controllers/admin.project.controller.js";
-import {
-  limitImageRequestBody,
-  uploadGalleryImages,
-  uploadSingleImage,
-} from "../../middleware/upload.js";
 import { validate } from "../../middleware/validate.js";
 import {
   projectImageParams,
@@ -26,6 +21,8 @@ import {
 import { paginationSchema } from "../../lib/pagination.js";
 import {
   createProjectSchema,
+  signedUploadListSchema,
+  signedUploadResultSchema,
   updateProjectSchema,
 } from "../../schemas/project.schemas.js";
 
@@ -62,18 +59,16 @@ export const registerProjectRoutes = (router: Router): void => {
     featureProject,
   );
 
+  // Cover and gallery are direct-to-cloudinary signed uploads. The admin
+  // sends the Cloudinary result as JSON; the backend never sees the file bytes.
   router.post(
     "/projects/:id/cover",
-    validate({ params: uuidParams }),
-    limitImageRequestBody,
-    uploadSingleImage,
+    validate({ params: uuidParams, body: signedUploadResultSchema }),
     uploadCover,
   );
   router.post(
     "/projects/:id/gallery",
-    validate({ params: uuidParams }),
-    limitImageRequestBody,
-    uploadGalleryImages,
+    validate({ params: uuidParams, body: signedUploadListSchema }),
     uploadGallery,
   );
   router.patch(

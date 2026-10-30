@@ -238,27 +238,31 @@ export const deleteProjectImage = async (imageId: string): Promise<void> => {
   await db.delete(projectImages).where(eq(projectImages.id, imageId));
 };
 
-export type StoredKeyRow = { id: string; key: string };
-
-/**
- * Storage keys the API is expected to serve. Used by the startup integrity
- * check so it never duplicates SQL that already lives here.
- */
-export const listStoredCoverKeys = async (): Promise<StoredKeyRow[]> => {
-  const rows = await db
-    .select({ id: projects.id, key: projects.coverStorageKey })
-    .from(projects)
-    .where(isNotNull(projects.coverStorageKey));
-  return rows.flatMap((row) =>
-    row.key === null ? [] : [{ id: row.id, key: row.key }],
-  );
+export type StoredPublicIdRow = {
+  id: string;
+  /** Cloudinary public_id; null on rows that predate the Cloudinary flow. */
+  publicId: string | null;
 };
 
-export const listStoredGalleryKeys = async (): Promise<StoredKeyRow[]> => {
+/**
+ * Cloudinary public_ids the API is expected to serve. Used by the startup
+ * integrity check so it never duplicates SQL that already lives here. Legacy
+ * rows keep their ImageKit-era key in a different column and have no public_id,
+ * so they are not checked against Cloudinary.
+ */
+export const listStoredCoverKeys = async (): Promise<StoredPublicIdRow[]> => {
   const rows = await db
-    .select({ id: projectImages.id, key: projectImages.storageKey })
+    .select({ id: projects.id, publicId: projects.coverFileId })
+    .from(projects)
+    .where(isNotNull(projects.coverFileId));
+  return rows.map((row) => ({ id: row.id, publicId: row.publicId }));
+};
+
+export const listStoredGalleryKeys = async (): Promise<StoredPublicIdRow[]> => {
+  const rows = await db
+    .select({ id: projectImages.id, publicId: projectImages.fileId })
     .from(projectImages);
-  return rows.map((row) => ({ id: row.id, key: row.key }));
+  return rows.map((row) => ({ id: row.id, publicId: row.publicId }));
 };
 
 export const reorderProjectImages = async (

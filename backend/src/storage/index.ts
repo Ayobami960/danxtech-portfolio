@@ -1,33 +1,33 @@
 import { env } from "../config/env.js";
-import { ImageKitStorage } from "./imagekit.storage.js";
+import { CloudinaryStorage } from "./cloudinary.storage.js";
 import type { StorageDriver } from "./types.js";
 
-let driver: ImageKitStorage | undefined;
+let driver: CloudinaryStorage | undefined;
 
 /**
- * ImageKit is the only media storage provider: `config/env.ts` refuses to boot
- * without its three variables, so this is a guard for anything that runs before
- * the environment is fully loaded, not a fallback to another driver.
+ * Cloudinary is the only media storage provider. `config/env.ts` refuses to
+ * boot without CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY and
+ * CLOUDINARY_API_SECRET, so this is a guard for anything that runs before the
+ * environment is fully loaded, not a fallback to another driver.
  */
 export const isStorageConfigured = (): boolean =>
   Boolean(
-    env.storage.publicKey && env.storage.privateKey && env.storage.urlEndpoint,
+    env.cloudinary.cloudName &&
+      env.cloudinary.apiKey &&
+      env.cloudinary.apiSecret,
   );
 
-export const getStorage = (): ImageKitStorage => {
-  driver ??= new ImageKitStorage(env.storage);
+export const getStorage = (): CloudinaryStorage => {
+  driver ??= new CloudinaryStorage();
   return driver;
 };
-
-/** ImageKit-specific helpers (folder listings) for the storage integrity check. */
-export const getImageKitStorage = (): ImageKitStorage => getStorage();
 
 /**
  * Single source of truth for every media URL returned by the API. The stored
  * key is resolved through the driver, so the base is always the configured
- * endpoint (IMAGEKIT_URL_ENDPOINT) and never a URL frozen into a row.
- * Seed assets carry no key (or an "external/" key) and are served by the
- * public site, so their stored path is returned unchanged.
+ * Cloudinary delivery domain (or res.cloudinary.com) and never a URL frozen
+ * into a row. Seed assets carry no key (or an "external/" key) and are served
+ * by the public site, so their stored path is returned unchanged.
  */
 export const publicMediaUrl = (
   storageKey: string | null,
@@ -38,21 +38,25 @@ export const publicMediaUrl = (
 };
 
 /**
- * Delete one stored object. The fileId captured at upload time is preferred
- * because it costs a single request; the key is only a fallback for rows
- * written before fileIds were stored.
+ * Delete one stored object. Cloudinary assets are addressed by public_id, so
+ * `fileId` is the preferred key; `key` is a legacy fallback that only older
+ * rows can carry, and it is ignored when it does not look like a Cloudinary
+ * public_id path.
  */
 export const deleteStoredFile = async (target: {
   fileId?: string | null;
   key?: string | null;
+  /** Raw (PDF) assets must be destroyed on the `raw` endpoint. */
+  resourceType?: "image" | "raw";
 }): Promise<void> => {
   const storage = getStorage();
+  const resourceType = target.resourceType ?? "image";
   if (target.fileId) {
-    await storage.deleteById(target.fileId);
+    await storage.deleteById(target.fileId, resourceType);
     return;
   }
-  if (target.key) {
-    await storage.delete(target.key);
+  if (target.key && isCloudinaryPublicId(target.key)) {
+    await storage.deleteById(target.key, resourceType);
   }
 };
 
@@ -62,3 +66,10 @@ export const resetStorage = (): void => {
 };
 
 export type { StorageDriver };
+
+/** A string is a Cloudinary-style public_id when it starts with `portfolio/`. */
+const isCloudinaryPublicId = (value: string): boolean =>
+  typeof value === "string" &&
+  value.startsWith("portfolio/") &&
+  !value.includes("..");
+

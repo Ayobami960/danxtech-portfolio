@@ -1,25 +1,24 @@
 import type { Request } from "express";
-import { randomUUID } from "node:crypto";
-import { MAX_DOCUMENT_BYTES } from "../config/constants.js";
 import { logger } from "../config/logger.js";
-import { parseDataUrl } from "../lib/data-url.js";
 import { AppError, ERROR_CODES, conflict } from "../lib/errors.js";
 import { audit } from "../repositories/audit-writer.js";
 import { findProjectByDocumentFileId } from "../repositories/project.repository.js";
-import type { DocumentUploadInput } from "../schemas/document.schemas.js";
-import { deleteStoredFile, getStorage } from "../storage/index.js";
-import { assertPdf } from "./pdf.service.js";
+import { deleteStoredFile } from "../storage/index.js";
+import {
+  storageKeyFromPublicId,
+  type SignedUploadResult,
+  validateSignedUpload,
+} from "../lib/uploads.js";
 
 /** Portfolio documents are PDFs; widen this list if other formats are needed. */
-const ALLOWED_MIME_TYPES = ["application/pdf"] as const;
 const FOLDER = "documents";
 
 export type UploadedDocument = {
-  /** ImageKit's id, used to delete the object later. */
+  /** Cloudinary public_id used to delete the object later. */
   fileId: string | null;
-  /** Storage key inside ImageKit (no leading slash). */
+  /** Storage key / public_id inside Cloudinary (no leading slash). */
   key: string;
-  /** Public delivery URL built from IMAGEKIT_URL_ENDPOINT. */
+  /** Public delivery URL built from Cloudinary's configured delivery base. */
   url: string;
   name: string;
   mimeType: string;
@@ -36,47 +35,39 @@ const displayName = (value: string | undefined): string => {
 };
 
 /**
- * Accept a base64 JSON payload and store it through the same driver as every
- * other upload, so validation, retries, error mapping and the fileId/url
- * bookkeeping stay in one place.
+ * Accept a signed Cloudinary upload result from the admin and attest that the
+ * document was uploaded directly to Cloudinary. The backend never sees the file
+ * bytes, so there is no Vercel body-size limit for document uploads.
  */
 export const uploadPortfolioDocument = async (
   request: Request,
-  input: DocumentUploadInput,
+  input: SignedUploadResult,
 ): Promise<UploadedDocument> => {
-  const { mimeType, buffer } = parseDataUrl(input.dataUrl, {
-    allowedMimeTypes: ALLOWED_MIME_TYPES,
-    maxBytes: MAX_DOCUMENT_BYTES,
-    label: "The document",
-  });
-
-  const name = displayName(input.fileName);
-  assertPdf(buffer, name, "The document");
-
-  const year = new Date().getUTCFullYear();
-  const key = `${FOLDER}/${year}/${randomUUID()}.pdf`;
-  const stored = await getStorage().put(key, buffer, mimeType);
+  // Documents are uploaded with the `resume` preset: the only raw preset, which
+  // is what Cloudinary needs to store a PDF.
+  const validated = validateSignedUpload(input);
+  const key = storageKeyFromPublicId(validated.publicId);
 
   await audit(request, {
     action: "document.upload",
     entity: "document",
-    entityId: stored.fileId ?? stored.key,
-    meta: { key: stored.key, sizeBytes: buffer.length },
+    entityId: validated.publicId,
+    meta: { key, publicId: validated.publicId, sizeBytes: 0 },
   });
 
   return {
-    fileId: stored.fileId,
-    key: stored.key,
-    url: stored.url,
-    name,
-    mimeType,
-    sizeBytes: buffer.length,
+    fileId: validated.publicId,
+    key,
+    url: validated.url,
+    name: displayName(undefined),
+    mimeType: "application/pdf",
+    sizeBytes: 0,
   };
 };
 
 /**
  * Remove an upload that was never attached to a project, so an abandoned
- * upload does not stay in ImageKit forever. Attached documents are refused:
+ * upload does not stay in Cloudinary forever. Attached documents are refused:
  * they must be detached from the project first, otherwise the project would
  * keep a dead link.
  */
@@ -100,12 +91,14 @@ export const deleteUploadedDocument = async (
   }
 
   try {
-    await deleteStoredFile({ fileId: target.fileId, key: target.key });
+    await deleteStoredFile({
+      fileId: target.fileId,
+      key: target.key,
+      resourceType: "raw",
+    });
   } catch (error) {
-    // ImageKit rejects with a plain object, not an Error, so read `message` from
-    // either shape instead of stringifying it to "[object Object]".
     const record = error as
-      | { message?: unknown; statusCode?: unknown }
+      | { message?: unknown; statusCode?: unknown; result?: unknown }
       | null
       | undefined;
     logger.error(
@@ -115,6 +108,8 @@ export const deleteUploadedDocument = async (
           typeof record?.statusCode === "number"
             ? record.statusCode
             : undefined,
+        cloudinaryResult:
+          typeof record?.result === "string" ? record.result : undefined,
         message:
           typeof record?.message === "string"
             ? record.message
