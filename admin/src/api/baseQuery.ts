@@ -20,11 +20,31 @@ let lastRefreshedAt = 0;
 const rawBaseQuery = fetchBaseQuery({
   baseUrl: API_BASE,
   credentials: "include",
-  prepareHeaders: (headers, { getState }) => {
+  prepareHeaders: async (headers, { getState }) => {
     const state = getState() as RootState;
     headers.set("accept", "application/json");
-    if (state.auth.csrfToken) {
-      headers.set("x-csrf-token", state.auth.csrfToken);
+
+    const token = state.auth.csrfToken;
+    if (token) {
+      headers.set("x-csrf-token", token);
+      return headers;
+    }
+
+    // Redux has no token yet. For GET/HEAD/OPTIONS we can proceed without
+    // one (those are never CSRF-protected here). For anything else, grab a
+    // current token from the server so the first mutation does not fail.
+    const args = (getState() as { api?: { args?: FetchArgs } }).api?.args;
+    const method =
+      typeof args === "string"
+        ? "GET"
+        : (args as FetchArgs)?.method;
+    const isMutation = !!(method && method !== "GET" && method !== "HEAD");
+
+    if (!isMutation) return headers;
+
+    const fresh = await fetchCsrfToken();
+    if (fresh) {
+      headers.set("x-csrf-token", fresh);
     }
     return headers;
   },
@@ -72,10 +92,18 @@ export const baseQueryWithReauth: BaseQueryFn<
     const error = normalize(result.error as FetchBaseQueryError);
 
     if (error.status === 403 && error.code === "CSRF_INVALID") {
+      // Retry once with a freshly issued token. If the fresh token is also
+      // invalid, the request is genuinely forged/malformed and must fail.
       const token = await fetchCsrfToken();
       if (token) {
         api.dispatch(setCsrfToken(token));
-        result = await rawBaseQuery(args, api, extraOptions);
+        const retry = await rawBaseQuery(args, api, extraOptions);
+        if (!retry.error) return retry;
+        const retryError = normalize(retry.error as FetchBaseQueryError);
+        if (retryError.status === 403 && retryError.code === "CSRF_INVALID") {
+          return { error: retry.error };
+        }
+        result = retry;
       }
     }
 

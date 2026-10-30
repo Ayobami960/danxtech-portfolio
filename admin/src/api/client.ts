@@ -43,35 +43,67 @@ export const apiRequest = async <T>(
 ): Promise<ApiResult<T>> => {
   const headers: Record<string, string> = { accept: "application/json" };
   if (options.body !== undefined) headers["content-type"] = "application/json";
-  if (options.csrfToken && options.method && options.method !== "GET") {
-    headers["x-csrf-token"] = options.csrfToken;
+
+  const isMutation = !!(options.method && options.method !== "GET");
+
+  // Prefer a token passed by the caller (already current), otherwise for
+  // mutations make sure we have a current one before sending.
+  let token = options.csrfToken ?? (isMutation ? (await fetchCsrfToken()) : undefined);
+
+  if (isMutation && token) {
+    headers["x-csrf-token"] = token;
   }
 
-  try {
-    const response = await fetch(`${API_BASE}${path}`, {
-      method: options.method ?? "GET",
-      credentials: "include",
-      headers,
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
-      ...(options.signal ? { signal: options.signal } : {}),
-    });
-    const data = await parseBody(response);
-    if (!response.ok) {
-      return { ok: false, error: normalizeError(response.status, data) };
+  const send = async (): Promise<ApiResult<T>> => {
+    try {
+      const response = await fetch(`${API_BASE}${path}`, {
+        method: options.method ?? "GET",
+        credentials: "include",
+        headers,
+        body:
+          options.body === undefined ? undefined : JSON.stringify(options.body),
+        ...(options.signal ? { signal: options.signal } : {}),
+      });
+      const data = await parseBody(response);
+      if (!response.ok) {
+        return { ok: false, error: normalizeError(response.status, data) };
+      }
+      return { ok: true, data: data as T, status: response.status };
+    } catch (error) {
+      if ((error as Error).name === "AbortError") {
+        return {
+          ok: false,
+          error: {
+            status: "TIMEOUT",
+            code: "TIMEOUT",
+            message: "Request cancelled.",
+          },
+        };
+      }
+      return { ok: false, error: normalizeError("FETCH_ERROR", null) };
     }
-    return { ok: true, data: data as T, status: response.status };
-  } catch (error) {
-    if ((error as Error).name === "AbortError") {
-      return {
-        ok: false,
-        error: { status: "TIMEOUT", code: "TIMEOUT", message: "Request cancelled." },
-      };
+  };
+
+  const result = await send();
+
+  // A 403 CSRF_INVALID means the token we sent was missing, stale, or
+  // cleared server-side (logout / password change / 2fa cookie cleared).
+  // Fetch a fresh one and retry once; if that also fails, report it.
+  if (
+    result.ok === false &&
+    result.error.status === 403 &&
+    result.error.code === "CSRF_INVALID" &&
+    isMutation
+  ) {
+    const fresh = await fetchCsrfToken();
+    if (fresh) {
+      headers["x-csrf-token"] = fresh;
+      const retry = await send();
+      if (retry.ok) return retry;
     }
-    return {
-      ok: false,
-      error: normalizeError("FETCH_ERROR", null),
-    };
   }
+
+  return result;
 };
 
 /** Exchange the refresh cookie for a new access cookie. Returns success. */
