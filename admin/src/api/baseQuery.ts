@@ -88,45 +88,45 @@ export const baseQueryWithReauth: BaseQueryFn<
 > = async (args, api, extraOptions) => {
   let result = await rawBaseQuery(args, api, extraOptions);
 
-  if (result.error) {
-    const error = normalize(result.error as FetchBaseQueryError);
+  if (!result.error) return result;
 
-    if (error.status === 403 && error.code === "CSRF_INVALID") {
-      // Retry once with a freshly issued token. If the fresh token is also
-      // invalid, the request is genuinely forged/malformed and must fail.
-      const token = await fetchCsrfToken();
-      if (token) {
-        api.dispatch(setCsrfToken(token));
-        const retry = await rawBaseQuery(args, api, extraOptions);
-        if (!retry.error) return retry;
-        const retryError = normalize(retry.error as FetchBaseQueryError);
-        if (retryError.status === 403 && retryError.code === "CSRF_INVALID") {
-          return { error: retry.error };
-        }
-        result = retry;
-      }
-    }
+  const error = normalize(result.error as FetchBaseQueryError);
 
-    if (result.error && normalize(result.error as FetchBaseQueryError).status === 401) {
-      const refreshed = await refreshOnce(api);
-      if (refreshed) {
-        result = await rawBaseQuery(args, api, extraOptions);
+  // Retry once with a freshly issued token. If the fresh token is also
+  // invalid, the request is genuinely forged/malformed and must fail.
+  if (error.status === 403 && error.code === "CSRF_INVALID") {
+    const token = await fetchCsrfToken();
+    if (token) {
+      api.dispatch(setCsrfToken(token));
+      const retry = await rawBaseQuery(args, api, extraOptions);
+      if (!retry.error) return retry;
+      const retryError = normalize(retry.error as FetchBaseQueryError);
+      if (retryError.status === 403 && retryError.code === "CSRF_INVALID") {
+        // Do not recurse again; report the fresh-token failure as a normal
+        // ApiError envelope so every return path has the same type.
+        return { error: retry.error ? normalize(retry.error as FetchBaseQueryError) : normalizeError("FETCH_ERROR", null) };
       }
+      result = retry;
       if (!result.error) return result;
-
-      const finalError = normalize(result.error as FetchBaseQueryError);
-      if (finalError.status === 401) {
-        api.dispatch(sessionExpired());
-      }
-      return { error: finalError };
     }
-
-    return {
-      error: result.error
-        ? normalize(result.error as FetchBaseQueryError)
-        : normalizeError("FETCH_ERROR", null),
-    };
   }
 
-  return result;
+  if (error.status === 401) {
+    const refreshed = await refreshOnce(api);
+    if (refreshed) {
+      result = await rawBaseQuery(args, api, extraOptions);
+      if (!result.error) return result;
+    }
+
+    const finalError = normalize(result.error as FetchBaseQueryError);
+    if (finalError.status === 401) {
+      api.dispatch(sessionExpired());
+    }
+    return { error: finalError };
+  }
+
+  return {
+    error: normalize(result.error as FetchBaseQueryError),
+  };
+
 };
