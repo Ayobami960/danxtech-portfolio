@@ -12,6 +12,9 @@ export const ACCEPT_IMAGES = "image/jpeg,image/png,image/webp,image/gif,image/av
  * upload would reject.
  */
 export const ACCEPT_CLOUDINARY_IMAGES = "image/jpeg,image/png,image/webp";
+/** Chat attachments: an image, or a PDF sent as a document. */
+export const ACCEPT_CHAT_ATTACHMENTS =
+  "image/jpeg,image/png,image/webp,image/gif,image/avif,application/pdf";
 
 /**
  * Browsers report an empty `file.type` (or "application/octet-stream") for

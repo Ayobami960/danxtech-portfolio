@@ -4,8 +4,11 @@ import {
   Check,
   CheckCheck,
   Copy,
+  FileText,
+  Loader2,
   Mail,
   MessageCircle,
+  Paperclip,
   RotateCcw,
   Send,
   ShieldAlert,
@@ -35,6 +38,7 @@ import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ErrorState, LoadingList } from "../../components/States";
 import { Toggle } from "../../components/Fields";
 import { cn } from "../../lib/cn";
+import { uploadChatAttachment } from "../../lib/cloudinary";
 import { formatDate, formatDay, relativeTime } from "../../lib/format";
 import {
   emitMessage,
@@ -50,6 +54,10 @@ type PendingMessage = {
   body: string;
   status: "sending" | "failed";
 };
+
+/** Older rows carry no type; they were all images. */
+const isImageMessage = (message: ChatMessage): boolean =>
+  !message.imageMimeType || message.imageMimeType.startsWith("image/");
 
 const Ticks = ({ message }: { message: ChatMessage }) => {
   if (message.readAt) {
@@ -421,8 +429,17 @@ export const Thread = ({
   conversationId: string;
   onBack: () => void;
 }) => {
-  const conversation = useGetConversationQuery(conversationId);
-  const messages = useGetMessagesQuery({ id: conversationId });
+  // Without a live socket the thread falls back to polling, so a message that
+  // arrives while the admin is reading the conversation still shows up.
+  const connection = useAppSelector((state) => state.realtime.connection);
+  const pollMs = connection === "live" ? 0 : 4_000;
+  const conversation = useGetConversationQuery(conversationId, {
+    pollingInterval: pollMs,
+  });
+  const messages = useGetMessagesQuery(
+    { id: conversationId },
+    { pollingInterval: pollMs },
+  );
   const [loadOlder] = useLazyGetMessagesQuery();
   const [sendRest] = useSendConversationMessageMutation();
   const [markRead] = useMarkConversationReadMutation();
@@ -442,6 +459,8 @@ export const Thread = ({
   const bottom = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
   const typingTimer = useRef<number | null>(null);
+  const attachInput = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     // The component is keyed by conversationId, so local state starts fresh.
@@ -538,6 +557,27 @@ export const Thread = ({
     atBottom.current = true;
     emitTyping(conversationId, false);
     void deliver(item);
+  };
+
+  /** Upload to Cloudinary, then post the message that references the file. */
+  const attach = async (file: File): Promise<void> => {
+    setUploading(true);
+    try {
+      const uploaded = await uploadChatAttachment(conversationId, file);
+      await sendRest({
+        id: conversationId,
+        clientMsgId: crypto.randomUUID(),
+        body: "",
+        imageKey: uploaded.key,
+        imageMimeType: uploaded.mimeType,
+        attachmentName: uploaded.name,
+      }).unwrap();
+    } catch (error) {
+      toast.error(errorMessage(error, "The attachment could not be sent."));
+    } finally {
+      setUploading(false);
+      if (attachInput.current) attachInput.current.value = "";
+    }
   };
 
   const onDraft = (value: string): void => {
@@ -641,7 +681,7 @@ export const Thread = ({
                         : "rounded-bl-md border border-white/8 bg-[#131c35] text-[#e6edf7]",
                     )}
                   >
-                    {message.imageUrl ? (
+                    {message.imageUrl && isImageMessage(message) ? (
                       <a
                         href={message.imageUrl}
                         target="_blank"
@@ -650,10 +690,26 @@ export const Thread = ({
                       >
                         <img
                           src={message.imageUrl}
-                          alt="Image attachment"
+                          alt={message.attachmentName ?? "Image attachment"}
                           loading="lazy"
                           className="max-h-64 w-full object-cover"
                         />
+                      </a>
+                    ) : null}
+                    {message.imageUrl && !isImageMessage(message) ? (
+                      <a
+                        href={message.imageUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={cn(
+                          "mb-1 flex items-center gap-2 px-3.5 py-2.5 text-xs underline-offset-2 hover:underline",
+                          mine ? "text-white" : "text-[#e6edf7]",
+                        )}
+                      >
+                        <FileText size={15} className="shrink-0" />
+                        <span className="min-w-0 truncate">
+                          {message.attachmentName ?? "Document"}
+                        </span>
                       </a>
                     ) : null}
                     {message.body ? (
@@ -738,6 +794,28 @@ export const Thread = ({
 
       <div className="border-t border-white/5 p-3">
         <div className="flex items-end gap-2">
+          <input
+            ref={attachInput}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif,image/avif,application/pdf"
+            className="hidden"
+            aria-hidden="true"
+            tabIndex={-1}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) void attach(file);
+            }}
+          />
+          <button
+            type="button"
+            className="btn btn-ghost h-11 !px-3"
+            onClick={() => attachInput.current?.click()}
+            disabled={closed || uploading}
+            aria-label="Attach an image or PDF"
+            title="Attach an image or PDF (max 5 MB)"
+          >
+            {uploading ? <Loader2 size={15} className="animate-spin" /> : <Paperclip size={15} />}
+          </button>
           <textarea
             className="field max-h-40 min-h-11 flex-1 resize-y py-2.5"
             value={draft}

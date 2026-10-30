@@ -1,8 +1,8 @@
-import type { Request, RequestHandler } from "express";
+import type { Request } from "express";
 import { asyncHandler } from "../lib/async-handler.js";
-import { AppError, ERROR_CODES } from "../lib/errors.js";
 import { body as readBody, query } from "../lib/request.js";
 import { clearChatSessionCookie } from "../lib/cookies.js";
+import { signChatUpload } from "../storage/cloudinary.storage.js";
 import type {
   ChatSendInput,
   ChatVerificationConfirmInput,
@@ -51,25 +51,17 @@ export const chatSendMessage = asyncHandler(async (request, response) => {
 });
 
 /**
- * Visitor image attachments are disabled. Uploads used to be pushed through the
- * API into storage; media now goes browser -> Cloudinary with a signature, and
- * only an authenticated admin can obtain one. Re-enabling visitor images needs
- * a conversation-scoped signing endpoint; until then the client gets a clear
- * error instead of a storage failure.
+ * Visitor attachments go browser -> Cloudinary with a signature scoped to the
+ * visitor's own conversation, so the API never proxies the file bytes and one
+ * visitor can never write into another conversation's folder.
  */
-export const chatUploadImageUnavailable: RequestHandler = (
-  _request,
-  _response,
-  next,
-) => {
-  next(
-    new AppError(
-      501,
-      ERROR_CODES.SERVICE_UNAVAILABLE,
-      "Image attachments in chat are temporarily unavailable.",
-    ),
-  );
-};
+export const chatSignUpload = asyncHandler(async (request, response) => {
+  const conversationId = await chat.guestUploadScope(request);
+  const { resourceType } = readBody<{ resourceType: "image" | "raw" }>(request);
+  response
+    .status(200)
+    .json(await signChatUpload(conversationId, resourceType));
+});
 
 export const chatSeen = asyncHandler(async (request, response) => {
   const conversationId = await session(request);

@@ -6,11 +6,12 @@ import {
   ArrowLeft,
   Check,
   CheckCheck,
-  ImagePlus,
+  FileText,
   Loader2,
   Lock,
   LogOut,
   Mail,
+  Paperclip,
   RotateCcw,
   Send,
   ShieldCheck,
@@ -18,7 +19,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  uploadChatImage,
+  uploadChatAttachment,
   useConfirmCodeMutation,
   useJoinMutation,
   useLazyGetMessagesQuery,
@@ -69,6 +70,21 @@ import type {
 } from "@/lib/chat/types";
 
 const TITLE = "Live chat · Adetoye Daniel Kehinde";
+
+/** Older rows carry no type; they were all images. */
+const isImageMessage = (message: RawChatMessage): boolean =>
+  !message.imageMimeType || message.imageMimeType.startsWith("image/");
+
+type PendingAttachment = { key: string; mimeType: string; name: string };
+
+const attachmentPayload = (attachment: PendingAttachment | undefined) =>
+  attachment
+    ? {
+        imageKey: attachment.key,
+        imageMimeType: attachment.mimeType,
+        attachmentName: attachment.name,
+      }
+    : {};
 
 /** The invite link carries both the conversation id and the invite token. */
 const readChatLink = (): ChatLink | null => {
@@ -487,10 +503,18 @@ export default function ChatScreen() {
   }, [messages.length]);
 
   /* ----------------------------------- send ----------------------------------- */
-  const deliver = async (clientMsgId: string, body: string): Promise<void> => {
+  const deliver = async (
+    clientMsgId: string,
+    body: string,
+    attachment?: PendingAttachment,
+  ): Promise<void> => {
     setSendError(null);
     if (isChatLive()) {
-      const ack = await sendOverSocket({ clientMsgId, body });
+      const ack = await sendOverSocket({
+        clientMsgId,
+        body,
+        ...attachmentPayload(attachment),
+      });
       if (ack.ok && ack.message) {
         dispatch(messageAccepted({ clientMsgId, message: ack.message }));
       } else {
@@ -500,7 +524,11 @@ export default function ChatScreen() {
       return;
     }
     try {
-      const message = await sendRest({ clientMsgId, body }).unwrap();
+      const message = await sendRest({
+        clientMsgId,
+        body,
+        ...attachmentPayload(attachment),
+      }).unwrap();
       dispatch(messageAccepted({ clientMsgId, message }));
     } catch (error) {
       dispatch(messageFailed({ clientMsgId }));
@@ -524,30 +552,36 @@ export default function ChatScreen() {
     await deliver(clientMsgId, body);
   };
 
-  /** Upload through the backend, then post the message that references it. */
-  const sendImage = async (file: File): Promise<void> => {
+  /** Upload to Cloudinary, then post the message that references the file. */
+  const sendAttachment = async (file: File): Promise<void> => {
     if (!conversation || closed) return;
     setSendError(null);
     setUploading(true);
     try {
-      const { key } = await uploadChatImage(file);
+      const uploaded = await uploadChatAttachment(file);
       const body = draft.trim();
       const clientMsgId = crypto.randomUUID();
+      dispatch(
+        messageQueued({
+          clientMsgId,
+          body,
+          conversationId: conversation.id,
+          imageUrl: uploaded.url,
+          imageMimeType: uploaded.mimeType,
+          attachmentName: uploaded.name,
+        }),
+      );
       setDraft("");
-
-      if (isChatLive()) {
-        const ack = await sendOverSocket({ clientMsgId, body, imageKey: key });
-        if (!ack.ok) {
-          setSendError(ack.error?.message ?? "The image could not be sent.");
-        }
-      } else {
-        await sendRest({ clientMsgId, body, imageKey: key }).unwrap();
-      }
+      await deliver(clientMsgId, body, {
+        key: uploaded.key,
+        mimeType: uploaded.mimeType,
+        name: uploaded.name,
+      });
     } catch (error) {
       setSendError(
         error instanceof Error && error.message
           ? error.message
-          : "The image could not be uploaded. Please try again.",
+          : "The attachment could not be uploaded. Please try again.",
       );
     } finally {
       setUploading(false);
@@ -919,7 +953,7 @@ export default function ChatScreen() {
                         : "rounded-bl-md border border-white/8 bg-[#0e1528] text-[#e6edf7]"
                     }`}
                   >
-                    {message.imageUrl ? (
+                    {message.imageUrl && isImageMessage(message) ? (
                       <a
                         href={message.imageUrl}
                         target="_blank"
@@ -929,10 +963,27 @@ export default function ChatScreen() {
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={message.imageUrl}
-                          alt="Image attachment"
+                          alt={message.attachmentName ?? "Image attachment"}
                           loading="lazy"
                           className="max-h-64 w-full rounded-lg object-cover"
                         />
+                      </a>
+                    ) : null}
+                    {message.imageUrl && !isImageMessage(message) ? (
+                      <a
+                        href={message.imageUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={`mb-1.5 flex items-center gap-2 rounded-lg border px-2.5! py-2! ${
+                          mine
+                            ? "border-white/30 bg-white/10 text-white hover:bg-white/20"
+                            : "border-white/10 bg-white/5 text-[#e6edf7] hover:border-[#3b82f6]/50"
+                        }`}
+                      >
+                        <FileText size={16} className="shrink-0" />
+                        <span className="min-w-0 truncate text-xs">
+                          {message.attachmentName ?? "Document"}
+                        </span>
                       </a>
                     ) : null}
                     {message.body ? (
@@ -1005,28 +1056,24 @@ export default function ChatScreen() {
             <input
               ref={attachInput}
               type="file"
-              accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+              accept="image/jpeg,image/png,image/webp,image/gif,image/avif,application/pdf"
               className="hidden"
               aria-hidden="true"
               tabIndex={-1}
               onChange={(event) => {
                 const file = event.target.files?.[0];
-                if (file) void sendImage(file);
+                if (file) void sendAttachment(file);
               }}
             />
             <button
               type="button"
               onClick={() => attachInput.current?.click()}
               disabled={closed || !ready || uploading}
-              aria-label="Attach an image"
-              title="Attach an image"
+              aria-label="Attach an image or PDF"
+              title="Attach an image or PDF (max 5 MB)"
               className="inline-flex h-[44px] w-[44px] items-center justify-center rounded-xl border border-white/10 text-[#9db0c6] transition-colors hover:border-[#3b82f6]/50 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {uploading ? (
-                <Loader2 size={16} className="animate-spin" />
-              ) : (
-                <ImagePlus size={16} />
-              )}
+              {uploading ? <Loader2 size={16} className="animate-spin" /> : <Paperclip size={16} />}
             </button>
             <label className="sr-only" htmlFor="chat-input">
               Message

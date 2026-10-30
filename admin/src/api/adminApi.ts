@@ -611,12 +611,25 @@ export const adminApi = createApi({
     }),
     sendConversationMessage: build.mutation<
       ChatMessage,
-      { id: string; clientMsgId: string; body: string }
+      {
+        id: string;
+        clientMsgId: string;
+        body: string;
+        imageKey?: string;
+        imageMimeType?: string;
+        attachmentName?: string;
+      }
     >({
-      query: ({ id, clientMsgId, body }) => ({
+      query: ({ id, clientMsgId, body, imageKey, imageMimeType, attachmentName }) => ({
         url: `/admin/conversations/${id}/messages`,
         method: "POST",
-        body: { clientMsgId, body },
+        body: {
+          clientMsgId,
+          body,
+          ...(imageKey ? { imageKey } : {}),
+          ...(imageMimeType ? { imageMimeType } : {}),
+          ...(attachmentName ? { attachmentName } : {}),
+        },
       }),
       invalidatesTags: (_result, _error, { id }) => [
         { type: "ConversationMessages", id },

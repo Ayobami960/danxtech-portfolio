@@ -32,9 +32,10 @@ export const getStorage = (): CloudinaryStorage => {
 export const publicMediaUrl = (
   storageKey: string | null,
   storedUrl: string | null,
+  resourceType: "image" | "raw" = "image",
 ): string | null => {
   if (!storageKey || storageKey.startsWith("external/")) return storedUrl;
-  return getStorage().publicUrl(storageKey);
+  return getStorage().publicUrl(storageKey, resourceType);
 };
 
 /**

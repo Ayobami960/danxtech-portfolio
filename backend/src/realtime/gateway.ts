@@ -23,7 +23,12 @@ import {
   verifyGuestSession,
 } from "../services/chat.service.js";
 import { setChatRealtime, type ChatRealtime } from "./bus.js";
-import { normalizeMessageBody } from "../schemas/chat.schemas.js";
+import {
+  chatAttachmentMimeSchema,
+  chatAttachmentNameSchema,
+  chatImageKeySchema,
+  normalizeMessageBody,
+} from "../schemas/chat.schemas.js";
 
 const conversationIdSchema = z.uuid();
 
@@ -32,6 +37,9 @@ const messagePayload = z
     conversationId: conversationIdSchema.optional(),
     clientMsgId: z.uuid(),
     body: z.string().max(2000),
+    imageKey: chatImageKeySchema.optional(),
+    imageMimeType: chatAttachmentMimeSchema.optional(),
+    attachmentName: chatAttachmentNameSchema.optional(),
   })
   .strict();
 
@@ -301,6 +309,13 @@ export const attachChatGateway = (httpServer: HttpServer): Server => {
             {
               clientMsgId: parsed.data.clientMsgId,
               body: normalizeMessageBody(parsed.data.body),
+              ...(parsed.data.imageKey ? { imageKey: parsed.data.imageKey } : {}),
+              ...(parsed.data.imageMimeType
+                ? { imageMimeType: parsed.data.imageMimeType }
+                : {}),
+              ...(parsed.data.attachmentName
+                ? { attachmentName: parsed.data.attachmentName }
+                : {}),
             },
           );
           ack?.({ ok: true, message });
@@ -415,6 +430,13 @@ export const attachChatGateway = (httpServer: HttpServer): Server => {
           const message = await guestSendMessage(conversationId, {
             clientMsgId: parsed.data.clientMsgId,
             body: normalizeMessageBody(parsed.data.body),
+            ...(parsed.data.imageKey ? { imageKey: parsed.data.imageKey } : {}),
+            ...(parsed.data.imageMimeType
+              ? { imageMimeType: parsed.data.imageMimeType }
+              : {}),
+            ...(parsed.data.attachmentName
+              ? { attachmentName: parsed.data.attachmentName }
+              : {}),
           });
           ack?.({ ok: true, message });
         } catch (error) {

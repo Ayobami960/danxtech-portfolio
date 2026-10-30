@@ -13,6 +13,8 @@ type Handler = (payload: unknown) => void;
 let socket: Socket | null = null;
 let status: ConnectionStatus = "offline";
 const handlers = new Map<string, Set<Handler>>();
+/** Conversations the inbox has open; re-joined after every (re)connect. */
+const joinedConversations = new Set<string>();
 const statusHandlers = new Set<(status: ConnectionStatus) => void>();
 const authHandlers = new Set<() => void>();
 const revokedHandlers = new Set<() => void>();
@@ -81,6 +83,11 @@ export const connectRealtime = (): void => {
 
   next.on("connect", () => {
     setStatus("live");
+    // Room membership lives on the server connection, so it is lost on every
+    // reconnect (and a join attempted before the socket existed was dropped).
+    for (const conversationId of joinedConversations) {
+      next.emit("conversation:view", { conversationId });
+    }
     emitLocal("__connected", {});
   });
 
@@ -128,14 +135,17 @@ export const connectRealtime = (): void => {
 export const disconnectRealtime = (): void => {
   socket?.disconnect();
   socket = null;
+  joinedConversations.clear();
   setStatus("offline");
 };
 
 export const joinConversation = (conversationId: string): void => {
+  joinedConversations.add(conversationId);
   socket?.emit("conversation:view", { conversationId });
 };
 
 export const leaveConversation = (conversationId: string): void => {
+  joinedConversations.delete(conversationId);
   socket?.emit("conversation:leave", { conversationId });
 };
 

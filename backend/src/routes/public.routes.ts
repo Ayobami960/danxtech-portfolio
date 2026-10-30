@@ -20,7 +20,7 @@ import {
   chatMessages,
   chatSeen,
   chatSendMessage,
-  chatUploadImageUnavailable,
+  chatSignUpload,
   chatVerifyConfirm,
   chatVerifyRequest,
 } from "../controllers/chat.public.controller.js";
@@ -43,6 +43,7 @@ import {
   chatMessagesQuerySchema,
   chatSeenSchema,
   chatSendSchema,
+  chatUploadSignSchema,
   chatVerificationConfirmSchema,
   chatVerificationRequestSchema,
 } from "../schemas/chat.schemas.js";
@@ -111,10 +112,14 @@ publicRouter.post(
 publicRouter.post("/chat/join", chatJoinLimiter(), chatJoin);
 publicRouter.post("/chat/logout", chatLogout);
 
-// Media now goes browser -> Cloudinary with an admin signature, so a visitor
-// upload cannot be signed here. The route answers 501 until chat images get a
-// conversation-scoped signing endpoint.
-publicRouter.post("/chat/images", chatLimiter(), chatUploadImageUnavailable);
+// Attachments go browser -> Cloudinary with a key signed for this visitor's
+// conversation; the API never receives the file bytes.
+publicRouter.post(
+  "/chat/uploads/sign",
+  chatLimiter(),
+  validate({ body: chatUploadSignSchema }),
+  chatSignUpload,
+);
 publicRouter.get(
   "/chat/messages",
   chatLimiter(),

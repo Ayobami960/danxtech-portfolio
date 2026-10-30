@@ -124,9 +124,12 @@ export const adminConversationLink = (conversationId: string): string | null =>
 const previewText = (value: string): string =>
   value.length > 200 ? `${value.slice(0, 200)}…` : value;
 
-/** Message list preview: text, or a label for an image-only message. */
-const messagePreview = (body: string, hasImage: boolean): string =>
-  body.length > 0 ? body : hasImage ? "Photo" : "";
+/** Message list preview: text, or a label for an attachment-only message. */
+const messagePreview = (body: string, attachmentMimeType: string | null): string => {
+  if (body.length > 0) return body;
+  if (!attachmentMimeType) return "";
+  return attachmentMimeType.startsWith("image/") ? "Photo" : "Document";
+};
 
 /** An attachment must belong to the conversation it is posted to. */
 const assertImageKey = (
@@ -138,11 +141,18 @@ const assertImageKey = (
     throw new AppError(
       400,
       ERROR_CODES.VALIDATION_ERROR,
-      "That image does not belong to this conversation.",
+      "That attachment does not belong to this conversation.",
     );
   }
   return imageKey;
 };
+
+/** Attachments default to a raw (document) asset when no type is supplied. */
+const attachmentMime = (
+  imageKey: string | null,
+  mimeType: string | undefined,
+): string | null =>
+  imageKey ? (mimeType ?? "application/octet-stream") : null;
 
 /* ------------------------------ conversations ------------------------------ */
 
@@ -351,6 +361,12 @@ export const verifyGuestSession = async (
 export const guestConversationId = async (
   request: Request,
 ): Promise<string> => verifyGuestSession(guestTokenFrom(request));
+
+/** The conversation a visitor may upload attachments into (open ones only). */
+export const guestUploadScope = async (request: Request): Promise<string> => {
+  const conversation = await assertGuestAccess(await guestConversationId(request));
+  return conversation.id;
+};
 
 /** Rejoin an existing, already verified session (no invite token needed). */
 export const guestJoin = async (request: Request) => {
@@ -575,17 +591,19 @@ export const guestSendMessage = async (
   }
 
   const imageKey = assertImageKey(conversationId, input.imageKey);
+  const imageMimeType = attachmentMime(imageKey, input.imageMimeType);
   const { message, duplicate } = await insertMessage({
     conversationId,
     sender: "visitor",
     body: input.body,
     clientMsgId: input.clientMsgId,
     imageKey,
-    imageMimeType: imageKey ? "image/webp" : null,
+    imageMimeType,
+    attachmentName: imageKey ? (input.attachmentName ?? null) : null,
   });
 
   if (!duplicate) {
-    const preview = messagePreview(input.body, Boolean(imageKey));
+    const preview = messagePreview(input.body, imageMimeType);
     await incrementUnread(conversationId, "admin");
     const updated = await updatePreview(conversationId, preview, message.createdAt);
     const deliveredAt = await deliverIfConnected(conversationId, "visitor");
@@ -621,17 +639,19 @@ export const adminSendMessage = async (
   }
 
   const imageKey = assertImageKey(conversationId, input.imageKey);
+  const imageMimeType = attachmentMime(imageKey, input.imageMimeType);
   const { message, duplicate } = await insertMessage({
     conversationId,
     sender: "admin",
     body: input.body,
     clientMsgId: input.clientMsgId,
     imageKey,
-    imageMimeType: imageKey ? "image/webp" : null,
+    imageMimeType,
+    attachmentName: imageKey ? (input.attachmentName ?? null) : null,
   });
 
   if (!duplicate) {
-    const preview = messagePreview(input.body, Boolean(imageKey));
+    const preview = messagePreview(input.body, imageMimeType);
     await incrementUnread(conversationId, "visitor");
     const updated = await updatePreview(conversationId, preview, message.createdAt);
     const deliveredAt = await deliverIfConnected(conversationId, "admin");

@@ -93,6 +93,8 @@ const chatSlice = createSlice({
         body: string;
         conversationId: string;
         imageUrl?: string | null;
+        imageMimeType?: string | null;
+        attachmentName?: string | null;
       }>,
     ) {
       adapter.upsertOne(state.messages, {
@@ -102,6 +104,8 @@ const chatSlice = createSlice({
         sender: "visitor",
         body: action.payload.body,
         imageUrl: action.payload.imageUrl ?? null,
+        imageMimeType: action.payload.imageMimeType ?? null,
+        attachmentName: action.payload.attachmentName ?? null,
         seq: 0,
         deliveredAt: null,
         readAt: null,

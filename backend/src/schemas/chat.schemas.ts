@@ -25,13 +25,23 @@ export const messageBodySchema = z
 
 export const clientMsgIdSchema = z.uuid();
 
-/** An ImageKit key produced by the chat upload endpoint for this conversation. */
+/** A Cloudinary key produced by the chat upload endpoint for this conversation. */
 export const chatImageKeySchema = z
   .string()
   .trim()
   .min(1)
   .max(300)
-  .regex(/^chat\/[0-9a-fA-F-]{36}\/[A-Za-z0-9._-]+$/, "Invalid image reference.");
+  .regex(/^chat\/[0-9a-fA-F-]{36}\/[A-Za-z0-9._-]+$/, "Invalid attachment reference.");
+
+/** MIME type of an attachment: `image/png`, `application/pdf`, … */
+export const chatAttachmentMimeSchema = z
+  .string()
+  .trim()
+  .max(100)
+  .regex(/^[a-z]+\/[A-Za-z0-9.+-]+$/, "Invalid attachment type.");
+
+/** Original file name, only shown for documents. */
+export const chatAttachmentNameSchema = z.string().trim().min(1).max(255);
 
 /** An image can be sent on its own; text-only messages must not be empty. */
 export const chatSendSchema = z
@@ -43,12 +53,23 @@ export const chatSendSchema = z
       .transform(normalizeMessageBody)
       .default(""),
     imageKey: chatImageKeySchema.optional(),
+    imageMimeType: chatAttachmentMimeSchema.optional(),
+    attachmentName: chatAttachmentNameSchema.optional(),
   })
   .strict()
   .refine((value) => value.body.length >= 1 || value.imageKey !== undefined, {
     message: "Message cannot be empty.",
     path: ["body"],
-  });
+  })
+  .refine(
+    (value) =>
+      value.imageKey !== undefined ||
+      (value.imageMimeType === undefined && value.attachmentName === undefined),
+    {
+      message: "An attachment name or type needs a file.",
+      path: ["imageKey"],
+    },
+  );
 
 /** Step 1 of the visitor flow: both link parts plus the email they used. */
 export const chatVerificationRequestSchema = z
@@ -69,6 +90,13 @@ export const chatVerificationConfirmSchema = z
       .string()
       .trim()
       .regex(/^\d{6}$/, "Enter the 6-digit code."),
+  })
+  .strict();
+
+/** A visitor asks for a signature before uploading an attachment. */
+export const chatUploadSignSchema = z
+  .object({
+    resourceType: z.enum(["image", "raw"]).default("image"),
   })
   .strict();
 

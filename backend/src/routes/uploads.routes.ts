@@ -8,17 +8,21 @@ import { requireCsrfForMutations } from "../middleware/csrf.js";
 import {
   cloudinaryDeletePublicId,
   isKind,
+  signChatUpload,
   signCloudinaryUpload,
 } from "../storage/cloudinary.storage.js";
 
 /**
  * Body of `POST /api/v1/uploads/sign`. `kind` picks the Cloudinary preset
  * (folder, public_id, resource type); the browser then uploads the file
- * straight to Cloudinary with the returned signature.
+ * straight to Cloudinary with the returned signature. Chat attachments are
+ * signed per conversation and carry their own resource type.
  */
 const signBody = z
   .object({
-    kind: z.enum(["cover", "gallery", "resume"]),
+    kind: z.enum(["cover", "gallery", "resume", "chat"]),
+    conversationId: z.uuid().optional(),
+    resourceType: z.enum(["image", "raw"]).optional(),
   })
   .strict();
 
@@ -49,7 +53,21 @@ router.post(
   "/sign",
   asyncHandler(async (request, response) => {
     const parsed = signBody.safeParse(request.body ?? {});
-    const kind: unknown = parsed.success ? parsed.data.kind : undefined;
+    if (!parsed.success) {
+      throw badRequest("Invalid upload request.");
+    }
+
+    const { kind, conversationId, resourceType } = parsed.data;
+
+    if (kind === "chat") {
+      if (!conversationId) {
+        throw badRequest("conversationId is required for chat uploads.");
+      }
+      response
+        .status(200)
+        .json(await signChatUpload(conversationId, resourceType ?? "image"));
+      return;
+    }
 
     if (!isKind(kind)) {
       throw badRequest("Invalid upload kind.");

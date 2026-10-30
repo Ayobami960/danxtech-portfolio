@@ -9,6 +9,8 @@ export type RawChatMessage = {
   sender: ChatSender;
   body: string;
   imageUrl: string | null;
+  imageMimeType: string | null;
+  attachmentName: string | null;
   clientMsgId: string | null;
   deliveredAt: string | null;
   readAt: string | null;

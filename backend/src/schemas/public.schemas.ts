@@ -20,5 +20,8 @@ export const projectSlugParamsSchema = z
 export const resumeDownloadQuerySchema = z
   .object({
     inline: z.enum(["1", "true", "0", "false"]).optional(),
+    // Cache-buster the site appends so a replaced PDF is not served from a
+    // browser or CDN cache. Only the value matters to the browser, not here.
+    v: z.string().trim().max(64).optional(),
   })
   .strict();

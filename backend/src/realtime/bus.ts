@@ -83,13 +83,26 @@ export const toConversationEvent = (
   updatedAt: conversation.updatedAt,
 });
 
+/**
+ * Documents are stored as Cloudinary `raw` assets, images as `image`. Rows
+ * written before attachments carried a type are all images.
+ */
+export const attachmentIsImage = (mimeType: string | null | undefined): boolean =>
+  !mimeType || mimeType.startsWith("image/");
+
 export const toMessageEvent = (message: ChatMessage): Record<string, unknown> => ({
   id: message.id,
   seq: message.seq,
   conversationId: message.conversationId,
   sender: message.sender,
   body: message.body,
-  imageUrl: publicMediaUrl(message.imageKey, null),
+  imageUrl: publicMediaUrl(
+    message.imageKey,
+    null,
+    attachmentIsImage(message.imageMimeType) ? "image" : "raw",
+  ),
+  imageMimeType: message.imageMimeType,
+  attachmentName: message.attachmentName,
   clientMsgId: message.clientMsgId,
   deliveredAt: message.deliveredAt,
   readAt: message.readAt,

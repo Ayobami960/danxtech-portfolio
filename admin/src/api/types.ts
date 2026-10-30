@@ -235,6 +235,8 @@ export type ChatMessage = {
   sender: "visitor" | "admin" | "system";
   body: string;
   imageUrl: string | null;
+  imageMimeType: string | null;
+  attachmentName: string | null;
   clientMsgId: string | null;
   deliveredAt: string | null;
   readAt: string | null;

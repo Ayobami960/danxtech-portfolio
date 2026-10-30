@@ -57,7 +57,13 @@ export const disconnectChat = (): void => {
 export const isChatLive = (): boolean => socket?.connected ?? false;
 
 export const sendOverSocket = (
-  payload: { clientMsgId: string; body: string; imageKey?: string },
+  payload: {
+    clientMsgId: string;
+    body: string;
+    imageKey?: string;
+    imageMimeType?: string;
+    attachmentName?: string;
+  },
   timeoutMs = 8_000,
 ): Promise<Ack> =>
   new Promise((resolve) => {

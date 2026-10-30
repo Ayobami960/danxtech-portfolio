@@ -353,9 +353,14 @@ export const chatMessages = pgTable(
     sender: chatSender("sender").notNull(),
     body: text("body").notNull(),
     clientMsgId: varchar("client_msg_id", { length: 36 }),
-    /** ImageKit key for an image attachment; the URL is built by the driver. */
+    /**
+     * Cloudinary public_id of the attachment (an image or a document); the URL
+     * is built by the driver from the key plus `imageMimeType`.
+     */
     imageKey: text("image_key"),
     imageMimeType: varchar("image_mime_type", { length: 100 }),
+    /** Original file name, shown on document attachments. */
+    attachmentName: text("attachment_name"),
     deliveredAt: tz("delivered_at"),
     readAt: tz("read_at"),
     createdAt: createdAt(),
@@ -365,7 +370,7 @@ export const chatMessages = pgTable(
       .on(t.conversationId, t.clientMsgId)
       .where(sql`${t.clientMsgId} is not null`),
     index("chat_messages_conv_seq_idx").on(t.conversationId, t.seq),
-    // A message is either text, an image, or both.
+    // A message is either text, an attachment, or both.
     check(
       "chat_messages_body_len",
       sql`char_length(${t.body}) between 0 and 2000 and (char_length(${t.body}) >= 1 or ${t.imageKey} is not null)`,

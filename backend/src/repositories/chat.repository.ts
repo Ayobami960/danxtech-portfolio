@@ -19,6 +19,7 @@ export const insertMessage = async (input: {
   clientMsgId: string | null;
   imageKey?: string | null;
   imageMimeType?: string | null;
+  attachmentName?: string | null;
   deliveredAt?: Date | null;
 }): Promise<{ message: ChatMessage; duplicate: boolean }> => {
   if (input.clientMsgId) {
@@ -44,6 +45,7 @@ export const insertMessage = async (input: {
       clientMsgId: input.clientMsgId,
       imageKey: input.imageKey ?? null,
       imageMimeType: input.imageMimeType ?? null,
+      attachmentName: input.attachmentName ?? null,
       deliveredAt: input.deliveredAt ?? null,
     })
     .returning();

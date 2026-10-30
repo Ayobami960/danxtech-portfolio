@@ -133,6 +133,38 @@ export const signCloudinaryUpload = async (
   };
 };
 
+/**
+ * Signed upload parameters for a chat attachment. The folder is scoped to the
+ * conversation (`chat/<conversationId>`), so a signature can only ever write
+ * into the conversation it was issued for. Images use `image`, documents
+ * (PDFs) use `raw`.
+ */
+export const signChatUpload = async (
+  conversationId: string,
+  resourceType: ResourceType,
+): Promise<{
+  signature: string;
+  timestamp: number;
+  apiKey: string;
+  cloudName: string;
+  resourceType: ResourceType;
+  params: Record<string, string>;
+}> => {
+  if (!/^[0-9a-fA-F-]{36}$/.test(conversationId)) {
+    throw new Error("Invalid conversation id");
+  }
+
+  const { cloudName, apiKey, apiSecret } = cloudinaryEnv();
+  const timestamp = Math.round(Date.now() / 1000);
+  const params: Record<string, string> = { folder: `chat/${conversationId}` };
+  const signature = cloudinarySignParams(
+    { ...params, timestamp: String(timestamp) },
+    apiSecret,
+  );
+
+  return { signature, timestamp, apiKey, cloudName, resourceType, params };
+};
+
 export const cloudinaryDeletePublicId = async (
   publicId: string,
   resourceType: ResourceType = "image",
@@ -140,7 +172,11 @@ export const cloudinaryDeletePublicId = async (
   // Legacy ImageKit rows have no publicId: nothing to delete.
   if (!publicId) return { result: "not_found" };
 
-  if (!publicId.startsWith("portfolio/") || publicId.includes("..")) {
+  // Portfolio assets plus chat attachments, one folder per conversation.
+  if (
+    !(publicId.startsWith("portfolio/") || publicId.startsWith("chat/")) ||
+    publicId.includes("..")
+  ) {
     throw new Error("Invalid publicId");
   }
 
