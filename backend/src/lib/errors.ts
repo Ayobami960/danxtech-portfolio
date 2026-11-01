@@ -50,3 +50,14 @@ export const notFound = (message = "Resource not found.") =>
 
 export const conflict = (message: string, details?: unknown) =>
   new AppError(409, ERROR_CODES.CONFLICT, message, details);
+
+/**
+ * The database (or another dependency) is unreachable. This is a 503 so the
+ * client keeps the session instead of treating the failure as a 401.
+ */
+export const serviceUnavailable = () =>
+  new AppError(
+    503,
+    ERROR_CODES.SERVICE_UNAVAILABLE,
+    "The service is temporarily unavailable. Please try again.",
+  );

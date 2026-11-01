@@ -1,5 +1,6 @@
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 import { API_BASE_URL, API_PREFIX } from "../api/client";
+import { friendlyMessage } from "../api/friendly-errors";
 import { getGuestToken } from "./session";
 import type {
   JoinResponse,
@@ -22,6 +23,9 @@ const jsonHeaders = (): Record<string, string> => ({
 export const chatApi = createApi({
   reducerPath: "chatApi",
   baseQuery: fetchBaseQuery({ baseUrl: `${API_BASE_URL}${API_PREFIX}` }),
+  // `setupListeners` in store.ts refetches active queries when the browser
+  // comes back online.
+  refetchOnReconnect: true,
   endpoints: (build) => ({
     /** Step 1: ask for a code. The answer is deliberately generic. */
     requestCode: build.mutation<
@@ -145,13 +149,13 @@ type CloudinaryUploadPayload = {
 
 const responseError = async (response: Response, fallback: string): Promise<string> => {
   const payload: unknown = await response.json().catch(() => null);
-  const message =
-    typeof payload === "object" &&
-    payload !== null &&
-    typeof (payload as { error?: { message?: unknown } }).error?.message === "string"
-      ? (payload as { error: { message: string } }).error.message
-      : null;
-  return message ?? fallback;
+  const envelope =
+    typeof payload === "object" && payload !== null
+      ? (payload as { error?: { code?: unknown } }).error
+      : undefined;
+  const code = typeof envelope?.code === "string" ? envelope.code : "";
+  // Never surface the server's own message; map the code to local copy.
+  return code ? friendlyMessage(response.status, code) : fallback;
 };
 
 /**

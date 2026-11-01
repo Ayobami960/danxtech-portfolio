@@ -74,7 +74,8 @@ assumed; horizontal scaling needs the Socket.IO Redis adapter.
 ```bash
 npm run lint
 npm run build
+npm test
 ```
 
-There is no test suite. Use `docs/MANUAL_QA.md` in the repository root for the
-end-to-end checklist.
+`npm test` covers the sanitising error-message helper. Use `docs/MANUAL_QA.md` in
+the repository root for the end-to-end checklist.

@@ -3,8 +3,8 @@ import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { z } from "zod";
-import { isApiError } from "../../api/errors";
-import { useAppDispatch, useAppSelector } from "../../app/hooks";
+import { errorMessage, isApiError } from "../../api/errors";
+import { useAppDispatch, useAppSelector } from "../../store/hooks";
 import { login, verifyTwoFactor } from "./thunks";
 
 const loginSchema = z.object({
@@ -59,14 +59,13 @@ export default function LoginPage() {
         navigate(next, { replace: true });
       }
     } catch (thrown) {
-      if (isApiError(thrown)) {
-        setError(
-          thrown.status === 429
-            ? "Too many attempts, try again later."
-            : "Invalid email or password.",
-        );
+      if (isApiError(thrown) && thrown.status === 429) {
+        setError("Too many attempts, try again later.");
+      } else if (isApiError(thrown) && thrown.status === 401) {
+        setError("Invalid email or password.");
       } else {
-        setError("Unable to sign in right now.");
+        // 503/offline must not be reported as bad credentials.
+        setError(errorMessage(thrown, "Unable to sign in right now."));
       }
     }
   });
@@ -77,11 +76,13 @@ export default function LoginPage() {
       await dispatch(verifyTwoFactor(values)).unwrap();
       navigate(next, { replace: true });
     } catch (thrown) {
-      setError(
-        isApiError(thrown) && thrown.status === 429
-          ? "Too many attempts, try again later."
-          : "Invalid code.",
-      );
+      if (isApiError(thrown) && thrown.status === 429) {
+        setError("Too many attempts, try again later.");
+      } else if (isApiError(thrown) && thrown.status === 401) {
+        setError("Invalid code.");
+      } else {
+        setError(errorMessage(thrown, "Unable to verify that code right now."));
+      }
     }
   });
 
@@ -92,7 +93,7 @@ export default function LoginPage() {
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-[#3b82f6]/30 bg-[#3b82f6]/10 font-grotesk text-lg font-bold text-[#3b82f6]">
             AD
           </div>
-          <h1 className="font-grotesk text-2xl font-bold text-white">Admin access</h1>
+          <h1 className="font-grotesk text-2xl font-bold text-white">Admin portfolio access Panel</h1>
           <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.2em] text-muted">
             Adetoye Daniel Kehinde
           </p>
@@ -135,7 +136,7 @@ export default function LoginPage() {
                     onClick={() => setShowPassword((prev) => !prev)}
                     aria-label={showPassword ? "Hide password" : "Show password"}
                     aria-pressed={showPassword}
-                    className="absolute inset-y-0 right-3 flex items-center font-mono text-[11px] uppercase tracking-[0.15em] text-muted transition hover:text-white"
+                    className="absolute inset-y-0 right-3 flex items-center font-mono text-[11px]! uppercase tracking-[0.15em] text-muted transition hover:text-white"
                   >
                     {showPassword ? "Hide" : "Show"}
                   </button>

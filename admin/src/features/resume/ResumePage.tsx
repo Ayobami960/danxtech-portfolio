@@ -7,7 +7,7 @@ import {
   useUpdateResumeMutation,
 } from "../../api/adminApi";
 import { errorMessage } from "../../api/errors";
-import { API_ORIGIN } from "../../app/config";
+import { API_ORIGIN } from "../../utils/config";
 import { Card } from "../../components/Card";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { PageHeader } from "../../components/PageHeader";

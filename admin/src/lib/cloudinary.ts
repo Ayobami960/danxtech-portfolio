@@ -1,6 +1,6 @@
 // lib/cloudinary.ts
-import { API_BASE } from "../app/config";
-import { store } from "../app/store";
+import { API_BASE } from "../utils/config";
+import { store } from "../store/store";
 import {
   ACCEPT_CHAT_ATTACHMENTS,
   ACCEPT_CLOUDINARY_IMAGES,

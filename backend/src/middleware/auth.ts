@@ -2,7 +2,8 @@ import type { RequestHandler } from "express";
 import { ACCESS_COOKIE } from "../config/constants.js";
 import { readCookie } from "../lib/cookies.js";
 import { verifyAccessToken } from "../lib/jwt.js";
-import { unauthorized } from "../lib/errors.js";
+import { serviceUnavailable, unauthorized } from "../lib/errors.js";
+import { isServiceUnavailable } from "../lib/error-response.js";
 import { findAdminById } from "../repositories/admin.repository.js";
 
 const readAccessToken = (authorization: string | undefined): string | null => {
@@ -28,7 +29,17 @@ export const requireAuth: RequestHandler = (request, _response, next) => {
       }
 
       const payload = await verifyAccessToken(token);
-      const admin = await findAdminById(payload.sub);
+
+      let admin;
+      try {
+        admin = await findAdminById(payload.sub);
+      } catch (error) {
+        // A DB outage must not look like an invalid session: 401 would sign the
+        // admin out and throw away a perfectly good cookie.
+        if (isServiceUnavailable(error)) throw serviceUnavailable();
+        throw error;
+      }
+
       if (!admin) {
         throw unauthorized("Session is no longer valid.");
       }

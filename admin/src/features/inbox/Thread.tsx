@@ -5,6 +5,7 @@ import {
   CheckCheck,
   Copy,
   FileText,
+  Info,
   Loader2,
   Mail,
   MessageCircle,
@@ -33,7 +34,7 @@ import {
 } from "../../api/adminApi";
 import type { ChatMessage, Conversation } from "../../api/types";
 import { errorMessage } from "../../api/errors";
-import { useAppSelector } from "../../app/hooks";
+import { useAppSelector } from "../../store/hooks";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ErrorState, LoadingList } from "../../components/States";
 import { Toggle } from "../../components/Fields";
@@ -61,12 +62,12 @@ const isImageMessage = (message: ChatMessage): boolean =>
 
 const Ticks = ({ message }: { message: ChatMessage }) => {
   if (message.readAt) {
-    return <CheckCheck size={13} className="text-[#93c5fd]" aria-label="Read" />;
+    return <CheckCheck size={13} className="cx-tick read" aria-label="Read" />;
   }
   if (message.deliveredAt) {
-    return <CheckCheck size={13} className="text-[#7c8fa6]" aria-label="Delivered" />;
+    return <CheckCheck size={13} className="cx-tick" aria-label="Delivered" />;
   }
-  return <Check size={13} className="text-[#5f7189]" aria-label="Sent" />;
+  return <Check size={13} className="cx-tick" aria-label="Sent" />;
 };
 
 const InvitePanel = ({ conversation }: { conversation: Conversation }) => {
@@ -111,36 +112,31 @@ const InvitePanel = ({ conversation }: { conversation: Conversation }) => {
     }
   };
 
+  const chipClass =
+    status === "active"
+      ? "open"
+      : status === "revoked"
+        ? "spam"
+        : status === "expired"
+          ? "archived"
+          : "";
+
   return (
-    <div className="border-b border-white/5 bg-[#0e1528]/60 p-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wide text-[#7c8fa6]">
+    <div className="cx-invite">
+      <div className="cx-invite-row">
+        <span className="cx-invite-title">
           <Ticket size={13} /> Chat invite
         </span>
-        <span
-          className={cn(
-            "rounded-full border px-2 py-0.5 font-mono text-[9px] uppercase",
-            status === "active"
-              ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
-              : status === "revoked"
-                ? "border-red-400/30 bg-red-400/10 text-red-300"
-                : status === "expired"
-                  ? "border-amber-400/30 bg-amber-400/10 text-amber-300"
-                  : "border-white/10 bg-white/5 text-[#7c8fa6]",
-          )}
-        >
+        <span className={cn("cx-chip", chipClass)}>
           {status === "none" ? "Not invited" : status}
         </span>
         {conversation.invite.expiresAt && status === "active" ? (
-          <span className="text-[11px] text-[#5f7189]">
+          <span className="mono" style={{ color: "var(--mute)" }}>
             expires {formatDate(conversation.invite.expiresAt)}
           </span>
         ) : null}
         <span
-          className={cn(
-            "flex items-center gap-1 font-mono text-[10px]",
-            conversation.visitorVerifiedAt ? "text-emerald-300" : "text-[#5f7189]",
-          )}
+          className={cn("cx-verified", conversation.visitorVerifiedAt && "ok")}
           title={
             conversation.visitorVerifiedAt
               ? `Verified ${formatDate(conversation.visitorVerifiedAt)}`
@@ -151,11 +147,11 @@ const InvitePanel = ({ conversation }: { conversation: Conversation }) => {
           {conversation.visitorVerifiedAt ? "visitor verified" : "not verified"}
         </span>
 
-        <div className="ml-auto flex flex-wrap items-center gap-1.5">
+        <div className="cx-invite-actions">
           {status === "none" || status === "expired" ? (
             <button
               type="button"
-              className="btn btn-primary !px-2.5 !py-1.5 text-xs"
+              className="btn btn-primary cx-btn-sm"
               onClick={() => setOpen(true)}
             >
               <Mail size={13} /> Send chat invite
@@ -164,7 +160,7 @@ const InvitePanel = ({ conversation }: { conversation: Conversation }) => {
             <>
               <button
                 type="button"
-                className="btn btn-ghost !px-2.5 !py-1.5 text-xs"
+                className="btn btn-ghost cx-btn-sm"
                 onClick={() => {
                   if (lastLink) void copy(lastLink);
                   else void send(true);
@@ -175,7 +171,7 @@ const InvitePanel = ({ conversation }: { conversation: Conversation }) => {
               </button>
               <button
                 type="button"
-                className="btn btn-ghost !px-2.5 !py-1.5 text-xs"
+                className="btn btn-ghost cx-btn-sm"
                 onClick={() => void send(true)}
                 disabled={resendState.isLoading}
               >
@@ -184,7 +180,7 @@ const InvitePanel = ({ conversation }: { conversation: Conversation }) => {
               {status === "active" ? (
                 <button
                   type="button"
-                  className="btn btn-danger !px-2.5 !py-1.5 text-xs"
+                  className="btn btn-danger cx-btn-sm"
                   onClick={() => setConfirmRevoke(true)}
                   disabled={revokeState.isLoading}
                 >
@@ -196,19 +192,17 @@ const InvitePanel = ({ conversation }: { conversation: Conversation }) => {
         </div>
       </div>
 
-      <p className="mt-1.5 text-[11px] text-[#5f7189]">
+      <p className="cx-invite-note">
         Only sent to the email the visitor entered. The link is private, single-conversation,
         and expires automatically.
       </p>
 
       {lastLink ? (
-        <div className="mt-2 flex items-center gap-2 rounded-lg border border-white/10 bg-black/20 p-2">
-          <code className="min-w-0 flex-1 truncate font-mono text-[10px] text-[#9db0c6]">
-            {lastLink}
-          </code>
+        <div className="cx-link">
+          <code>{lastLink}</code>
           <button
             type="button"
-            className="btn btn-ghost !px-2 !py-1 text-[10px]"
+            className="btn btn-ghost cx-btn-sm"
             onClick={() => void copy(lastLink)}
           >
             Copy
@@ -217,31 +211,29 @@ const InvitePanel = ({ conversation }: { conversation: Conversation }) => {
       ) : null}
 
       {open ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+        <div className="ov">
           <div
             role="dialog"
             aria-modal="true"
             aria-labelledby="invite-title"
-            className="window-card w-full max-w-md p-6"
+            className="dialog"
           >
-            <h2 id="invite-title" className="font-grotesk text-lg font-semibold text-white">
-              Invite {conversation.visitorName} to live chat
-            </h2>
-            <p className="mt-1 text-sm text-[#7c8fa6]">
+            <h2 id="invite-title">Invite {conversation.visitorName} to live chat</h2>
+            <p className="d">
               They will receive one email with a private link. No account needed.
             </p>
-            <label className="label mt-4" htmlFor="invite-note">
+            <label className="label" htmlFor="invite-note" style={{ marginTop: 16 }}>
               Personal note (optional)
             </label>
             <textarea
               id="invite-note"
-              className="field min-h-24"
+              className="field"
               maxLength={500}
               value={note}
               onChange={(event) => setNote(event.target.value)}
               placeholder="I'd be happy to talk this through live…"
             />
-            <label className="mt-3 flex items-center justify-between rounded-lg border border-white/10 px-3 py-2 text-sm text-[#cbd8e8]">
+            <label className="pubrow" style={{ marginTop: 12, justifyContent: "space-between" }}>
               Email it to {conversation.visitorEmail}
               <Toggle
                 checked={sendEmail}
@@ -249,7 +241,7 @@ const InvitePanel = ({ conversation }: { conversation: Conversation }) => {
                 label="Email the invite"
               />
             </label>
-            <div className="mt-5 flex justify-end gap-2">
+            <div className="a">
               <button type="button" className="btn btn-ghost" onClick={() => setOpen(false)}>
                 Cancel
               </button>
@@ -298,89 +290,64 @@ const VisitorPanel = ({ conversation }: { conversation: Conversation }) => {
       .unwrap()
       .catch((error: unknown) => toast.error(errorMessage(error)));
 
+  const inactive = conversation.status === "closed" || conversation.status === "archived";
+
   return (
-    <div className="p-4">
-      <div className="flex items-center gap-3">
-        <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#3b82f6]/15 font-grotesk text-lg font-bold text-[#93c5fd]">
-          {conversation.visitorName.slice(0, 1).toUpperCase()}
-        </div>
-        <div className="min-w-0">
-          <div className="truncate font-grotesk font-semibold text-white">
-            {conversation.visitorName}
-          </div>
-          <a
-            href={`mailto:${conversation.visitorEmail}`}
-            className="block truncate text-xs text-[#3b82f6] hover:underline"
-          >
-            {conversation.visitorEmail}
-          </a>
+    <div className="cx-side">
+      <div className="cx-who">
+        <div className="cx-avatar lg">{conversation.visitorName.slice(0, 1).toUpperCase()}</div>
+        <div style={{ minWidth: 0 }}>
+          <b>{conversation.visitorName}</b>
+          <a href={`mailto:${conversation.visitorEmail}`}>{conversation.visitorEmail}</a>
         </div>
       </div>
 
-      <dl className="mt-4 space-y-2 text-xs">
+      <dl className="cx-facts">
         <div>
-          <dt className="font-mono text-[10px] uppercase tracking-wide text-[#5f7189]">
-            Subject
-          </dt>
-          <dd className="text-[#cbd8e8]">{conversation.subject ?? "—"}</dd>
+          <dt>Subject</dt>
+          <dd>{conversation.subject ?? "—"}</dd>
         </div>
         <div>
-          <dt className="font-mono text-[10px] uppercase tracking-wide text-[#5f7189]">
-            First contact
-          </dt>
-          <dd className="text-[#cbd8e8]">{formatDate(conversation.createdAt)}</dd>
+          <dt>First contact</dt>
+          <dd>{formatDate(conversation.createdAt)}</dd>
         </div>
         <div>
-          <dt className="font-mono text-[10px] uppercase tracking-wide text-[#5f7189]">
-            Last activity
-          </dt>
-          <dd className="text-[#cbd8e8]">{relativeTime(conversation.lastMessageAt)}</dd>
+          <dt>Last activity</dt>
+          <dd>{relativeTime(conversation.lastMessageAt)}</dd>
         </div>
       </dl>
 
-      <div className="mt-5 space-y-1 border-t border-white/5 pt-3">
+      <div className="cx-actions">
         <button
           type="button"
-          className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm text-[#cbd8e8] hover:bg-white/5"
+          className={cn("cx-action", conversation.starred && "on")}
           onClick={() => void patch({ starred: !conversation.starred })}
           disabled={updateState.isLoading}
         >
-          <Star
-            size={15}
-            className={conversation.starred ? "text-[#f0a500]" : "text-[#7c8fa6]"}
-          />
+          <Star size={15} />
           {conversation.starred ? "Remove star" : "Star conversation"}
         </button>
         <button
           type="button"
-          className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm text-[#cbd8e8] hover:bg-white/5"
+          className="cx-action"
           onClick={() => void patch({ isSpam: !conversation.isSpam })}
           disabled={updateState.isLoading}
         >
-          <ShieldAlert size={15} className="text-[#7c8fa6]" />
+          <ShieldAlert size={15} />
           {conversation.isSpam ? "Not spam" : "Mark as spam"}
         </button>
         <button
           type="button"
-          className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm text-[#cbd8e8] hover:bg-white/5"
-          onClick={() =>
-            void patch({
-              status:
-                conversation.status === "closed" || conversation.status === "archived"
-                  ? "open"
-                  : "closed",
-            })
-          }
+          className="cx-action"
+          onClick={() => void patch({ status: inactive ? "open" : "closed" })}
           disabled={updateState.isLoading}
         >
-          <MessageCircle size={15} className="text-[#7c8fa6]" />
-          {conversation.status === "closed" || conversation.status === "archived"
-            ? "Reopen conversation"
-            : "Close conversation"}
+          <MessageCircle size={15} />
+          {inactive ? "Reopen conversation" : "Close conversation"}
         </button>
         <button
           type="button"
-          className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm text-[#cbd8e8] hover:bg-white/5"
+          className="cx-action"
           onClick={() =>
             void patch({
               status: conversation.status === "archived" ? "open" : "archived",
@@ -388,16 +355,12 @@ const VisitorPanel = ({ conversation }: { conversation: Conversation }) => {
           }
           disabled={updateState.isLoading}
         >
-          <Archive size={15} className="text-[#7c8fa6]" />
+          <Archive size={15} />
           {conversation.status === "archived"
             ? "Restore from archive"
             : "Archive conversation"}
         </button>
-        <button
-          type="button"
-          className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm text-red-300 hover:bg-red-500/10"
-          onClick={() => setConfirmDelete(true)}
-        >
+        <button type="button" className="cx-action bad" onClick={() => setConfirmDelete(true)}>
           <Trash2 size={15} /> Delete conversation
         </button>
       </div>
@@ -449,6 +412,7 @@ export const Thread = ({
   const [pending, setPending] = useState<PendingMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [showJump, setShowJump] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
   const typing = useAppSelector(
     (state) => state.realtime.typingByConversation[conversationId] ?? false,
   );
@@ -589,55 +553,73 @@ export const Thread = ({
     }, 1_200);
   };
 
-  if (conversation.isLoading) return <LoadingList rows={5} />;
+  if (conversation.isLoading)
+    return (
+      <div className="cx-panel">
+        <LoadingList rows={5} />
+      </div>
+    );
   if (conversation.error)
-    return <ErrorState error={conversation.error} onRetry={conversation.refetch} />;
+    return (
+      <div className="cx-panel">
+        <ErrorState error={conversation.error} onRetry={conversation.refetch} />
+      </div>
+    );
   if (!conversation.data) return null;
 
   const data = conversation.data;
   const closed = data.status === "closed";
+  const online = Boolean(presence?.visitorOnline);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center gap-3 border-b border-white/5 px-4 py-3">
-        <button
-          type="button"
-          className="btn btn-ghost !px-2 !py-1 text-xs lg:hidden"
-          onClick={onBack}
-        >
-          Back
-        </button>
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <h2 className="truncate font-grotesk font-semibold text-white">
-              {data.visitorName}
-            </h2>
-            {presence?.visitorOnline ? (
-              <span className="inline-flex items-center gap-1 font-mono text-[10px] text-emerald-300">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> online
-              </span>
-            ) : (
-              <span className="font-mono text-[10px] text-[#5f7189]">offline</span>
-            )}
-          </div>
-          <div className="truncate text-xs text-[#7c8fa6]">
-            {data.subject ?? "No subject"} · {data.visitorEmail}
-          </div>
+    <div className="cx-panel">
+      <div className="cx-head">
+        <span className="lg:hidden">
+          <button type="button" className="btn btn-ghost cx-btn-sm" onClick={onBack}>
+            Back
+          </button>
+        </span>
+        <div className={cn("cx-avatar", online && "hot")}>
+          {data.visitorName.slice(0, 1).toUpperCase()}
         </div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <h2>{data.visitorName}</h2>
+            <span className={cn("cx-presence", online && "on")}>
+              <i /> {online ? "online" : "offline"}
+            </span>
+          </div>
+          <small>
+            {data.subject ?? "No subject"} · {data.visitorEmail}
+          </small>
+        </div>
+        <span className="lg:hidden">
+          <button
+            type="button"
+            className="cx-iconbtn"
+            onClick={() => setShowDetails((value) => !value)}
+            aria-label="Conversation details"
+            aria-pressed={showDetails}
+          >
+            <Info size={15} />
+          </button>
+        </span>
       </div>
+
+      {showDetails ? (
+        <div className="cx-details lg:hidden">
+          <VisitorPanel conversation={data} />
+        </div>
+      ) : null}
 
       <InvitePanel conversation={data} />
 
-      <div
-        ref={scroller}
-        onScroll={onScroll}
-        className="min-h-0 flex-1 space-y-1 overflow-y-auto px-4 py-4"
-      >
+      <div ref={scroller} onScroll={onScroll} className="cx-msgs">
         {hasMore ? (
-          <div className="pb-2 text-center">
+          <div className="cx-more">
             <button
               type="button"
-              className="btn btn-ghost !py-1 text-[11px]"
+              className="btn btn-ghost cx-btn-sm"
               onClick={() => void load()}
               disabled={loadingOlder}
             >
@@ -658,41 +640,27 @@ export const Thread = ({
           return (
             <div key={message.id}>
               {newDay ? (
-                <div className="my-4 flex items-center gap-3">
-                  <span className="h-px flex-1 bg-white/5" />
-                  <span className="font-mono text-[10px] text-[#5f7189]">
-                    {formatDay(message.createdAt)}
-                  </span>
-                  <span className="h-px flex-1 bg-white/5" />
+                <div className="cx-day">
+                  <span>{formatDay(message.createdAt)}</span>
                 </div>
               ) : null}
-              <div className={cn("flex", mine ? "justify-end" : "justify-start")}>
-                <div className="max-w-[82%]">
+              <div className={cn("cx-line", mine && "mine")}>
+                <div className="cx-msg">
                   {!mine && index === 0 ? (
-                    <div className="mb-1 font-mono text-[9px] uppercase tracking-wide text-[#5f7189]">
-                      Sent via contact form
-                    </div>
+                    <div className="cx-from">Sent via contact form</div>
                   ) : null}
-                  <div
-                    className={cn(
-                      "overflow-hidden rounded-2xl text-sm",
-                      mine
-                        ? "rounded-br-md bg-[#3b82f6] text-white"
-                        : "rounded-bl-md border border-white/8 bg-[#131c35] text-[#e6edf7]",
-                    )}
-                  >
+                  <div className={cn("cx-bubble", mine && "mine")}>
                     {message.imageUrl && isImageMessage(message) ? (
                       <a
                         href={message.imageUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="block"
+                        className="cx-img"
                       >
                         <img
                           src={message.imageUrl}
                           alt={message.attachmentName ?? "Image attachment"}
                           loading="lazy"
-                          className="max-h-64 w-full object-cover"
                         />
                       </a>
                     ) : null}
@@ -701,29 +669,15 @@ export const Thread = ({
                         href={message.imageUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className={cn(
-                          "mb-1 flex items-center gap-2 px-3.5 py-2.5 text-xs underline-offset-2 hover:underline",
-                          mine ? "text-white" : "text-[#e6edf7]",
-                        )}
+                        className="cx-file"
                       >
-                        <FileText size={15} className="shrink-0" />
-                        <span className="min-w-0 truncate">
-                          {message.attachmentName ?? "Document"}
-                        </span>
+                        <FileText size={15} style={{ flex: "none" }} />
+                        <span>{message.attachmentName ?? "Document"}</span>
                       </a>
                     ) : null}
-                    {message.body ? (
-                      <div className="whitespace-pre-wrap break-words px-3.5 py-2.5">
-                        {message.body}
-                      </div>
-                    ) : null}
+                    {message.body ? <div className="cx-text">{message.body}</div> : null}
                   </div>
-                  <div
-                    className={cn(
-                      "mt-1 flex items-center gap-1 font-mono text-[9px] text-[#5f7189]",
-                      mine ? "justify-end" : "justify-start",
-                    )}
-                  >
+                  <div className="cx-time">
                     {formatDate(message.createdAt)}
                     {mine ? <Ticks message={message} /> : null}
                   </div>
@@ -734,26 +688,20 @@ export const Thread = ({
         })}
 
         {pending.map((item) => (
-          <div key={item.clientMsgId} className="flex justify-end">
-            <div className="max-w-[82%]">
+          <div key={item.clientMsgId} className="cx-line mine">
+            <div className="cx-msg">
               <div
                 className={cn(
-                  "whitespace-pre-wrap break-words rounded-2xl rounded-br-md px-3.5 py-2.5 text-sm",
-                  item.status === "failed"
-                    ? "border border-red-400/30 bg-red-500/15 text-red-100"
-                    : "bg-[#3b82f6]/60 text-white",
+                  "cx-bubble mine",
+                  item.status === "failed" ? "failed" : "pending",
                 )}
               >
-                {item.body}
+                <div className="cx-text">{item.body}</div>
               </div>
-              <div className="mt-1 flex items-center justify-end gap-2 font-mono text-[9px] text-[#5f7189]">
+              <div className="cx-time">
                 {item.status === "sending" ? "sending…" : "failed"}
                 {item.status === "failed" ? (
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-1 text-red-300 hover:underline"
-                    onClick={() => void deliver(item)}
-                  >
+                  <button type="button" className="cx-retry" onClick={() => void deliver(item)}>
                     <RotateCcw size={10} /> Retry
                   </button>
                 ) : null}
@@ -763,13 +711,13 @@ export const Thread = ({
         ))}
 
         {typing ? (
-          <div className="flex items-center gap-2 pt-1 text-[#7c8fa6]">
-            <span className="flex gap-1 rounded-full border border-white/10 bg-[#131c35] px-3 py-2">
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#7c8fa6]" />
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#7c8fa6] [animation-delay:120ms]" />
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#7c8fa6] [animation-delay:240ms]" />
+          <div className="cx-typing">
+            <span className="dots">
+              <i />
+              <i />
+              <i />
             </span>
-            <span className="text-[10px]">visitor is typing</span>
+            <span>visitor is typing</span>
           </div>
         ) : null}
 
@@ -777,10 +725,10 @@ export const Thread = ({
       </div>
 
       {showJump ? (
-        <div className="relative">
+        <div className="cx-jump-wrap">
           <button
             type="button"
-            className="absolute -top-12 right-4 inline-flex items-center gap-1 rounded-full border border-white/10 bg-[#131c35] px-3 py-1.5 text-[11px] text-[#cbd8e8] shadow-lg"
+            className="cx-jump"
             onClick={() => {
               atBottom.current = true;
               setShowJump(false);
@@ -792,8 +740,8 @@ export const Thread = ({
         </div>
       ) : null}
 
-      <div className="border-t border-white/5 p-3">
-        <div className="flex items-end gap-2">
+      <div className="cx-composer">
+        <div className="cx-composer-row">
           <input
             ref={attachInput}
             type="file"
@@ -808,16 +756,18 @@ export const Thread = ({
           />
           <button
             type="button"
-            className="btn btn-ghost h-11 !px-3"
+            className="cx-iconbtn"
+            style={{ width: 44, height: 44 }}
             onClick={() => attachInput.current?.click()}
             disabled={closed || uploading}
             aria-label="Attach an image or PDF"
             title="Attach an image or PDF (max 5 MB)"
           >
-            {uploading ? <Loader2 size={15} className="animate-spin" /> : <Paperclip size={15} />}
+            {uploading ? <Loader2 size={16} className="animate-spin" /> : <Paperclip size={16} />}
           </button>
           <textarea
-            className="field max-h-40 min-h-11 flex-1 resize-y py-2.5"
+            className="cx-input"
+            rows={1}
             value={draft}
             maxLength={2000}
             disabled={closed}
@@ -835,21 +785,18 @@ export const Thread = ({
           />
           <button
             type="button"
-            className="btn btn-primary h-11"
+            className="cx-send"
             onClick={send}
             disabled={closed || !draft.trim()}
+            aria-label="Send message"
           >
-            <Send size={15} /> Send
+            <Send size={17} />
           </button>
         </div>
-        <div className="mt-1 flex justify-between font-mono text-[10px] text-[#5f7189]">
+        <div className="cx-hint">
           <span>Enter to send · Shift+Enter for a new line</span>
           <span>{draft.length}/2000</span>
         </div>
-      </div>
-
-      <div className="lg:hidden">
-        <VisitorPanel conversation={data} />
       </div>
     </div>
   );

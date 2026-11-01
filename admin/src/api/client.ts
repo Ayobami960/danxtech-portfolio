@@ -1,4 +1,4 @@
-import { API_BASE } from "../app/config";
+import { API_BASE } from "../utils/config";
 import { normalizeError, type ApiError } from "./errors";
 
 export type ApiResult<T> =

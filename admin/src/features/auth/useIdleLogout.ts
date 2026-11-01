@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiRequest } from "../../api/client";
-import { broadcastActivity, subscribeChannel } from "../../app/channel";
-import { useAppDispatch, useAppSelector } from "../../app/hooks";
+import { broadcastActivity, subscribeChannel } from "../../utils/channel";
+import { useAppDispatch, useAppSelector } from "../../store/hooks";
 import { logout } from "./thunks";
 
 const IDLE_MS = 30 * 60 * 1000;

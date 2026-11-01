@@ -43,6 +43,8 @@ export const adminApi = createApi({
   reducerPath: "adminApi",
   baseQuery: baseQueryWithReauth,
   keepUnusedDataFor: 120,
+  // Refetch when the browser comes back online (setupListeners in store.ts).
+  refetchOnReconnect: true,
   tagTypes: [
     "Hero",
     "About",

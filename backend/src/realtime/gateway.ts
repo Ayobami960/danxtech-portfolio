@@ -10,6 +10,7 @@ import {
   REFRESH_COOKIE,
 } from "../config/constants.js";
 import { verifyAccessToken } from "../lib/jwt.js";
+import { isServiceUnavailable, toSocketError } from "../lib/error-response.js";
 import { hashRefreshToken } from "../lib/crypto.js";
 import { findAdminById } from "../repositories/admin.repository.js";
 import { findRefreshTokenByHash } from "../repositories/refresh-token.repository.js";
@@ -245,7 +246,17 @@ export const attachChatGateway = (httpServer: HttpServer): Server => {
         socket.data.familyId = familyId;
         socket.data.userAgent = admin.email;
         next();
-      } catch {
+      } catch (error) {
+        // A DB outage must not be reported as an expired session: the client
+        // would drop a valid cookie and sign the admin out.
+        if (isServiceUnavailable(error)) {
+          logger.error(
+            { err: error, requestId: socket.id, event: "admin:handshake" },
+            "Socket admin handshake failed: database unavailable",
+          );
+          next(new Error("SERVICE_UNAVAILABLE"));
+          return;
+        }
         next(new Error("AUTH_EXPIRED"));
       }
     })();
@@ -294,15 +305,15 @@ export const attachChatGateway = (httpServer: HttpServer): Server => {
           });
           return;
         }
-        const admin = await findAdminById(socket.data.adminId as string);
-        if (!admin) {
-          ack?.({
-            ok: false,
-            error: { code: "UNAUTHORIZED", message: "Session expired." },
-          });
-          return;
-        }
         try {
+          const admin = await findAdminById(socket.data.adminId as string);
+          if (!admin) {
+            ack?.({
+              ok: false,
+              error: { code: "UNAUTHORIZED", message: "Session expired." },
+            });
+            return;
+          }
           const message = await adminSendMessage(
             socketRequest(socket, admin),
             parsed.data.conversationId,
@@ -320,13 +331,16 @@ export const attachChatGateway = (httpServer: HttpServer): Server => {
           );
           ack?.({ ok: true, message });
         } catch (error) {
-          ack?.({
-            ok: false,
-            error: {
-              code: "SEND_FAILED",
-              message: error instanceof Error ? error.message : "Message failed.",
+          logger.error(
+            {
+              err: error,
+              requestId: socket.id,
+              event: "message:send",
+              userId: socket.data.adminId,
             },
-          });
+            "Socket message send failed",
+          );
+          ack?.({ ok: false, error: toSocketError(error) });
         }
       })();
     });
@@ -392,7 +406,15 @@ export const attachChatGateway = (httpServer: HttpServer): Server => {
         const conversationId = await verifyGuestSession(token);
         socket.data.conversationId = conversationId;
         next();
-      } catch {
+      } catch (error) {
+        if (isServiceUnavailable(error)) {
+          logger.error(
+            { err: error, requestId: socket.id, event: "guest:handshake" },
+            "Socket guest handshake failed: database unavailable",
+          );
+          next(new Error("SERVICE_UNAVAILABLE"));
+          return;
+        }
         next(new Error("INVITE_INVALID"));
       }
     })();
@@ -440,13 +462,11 @@ export const attachChatGateway = (httpServer: HttpServer): Server => {
           });
           ack?.({ ok: true, message });
         } catch (error) {
-          ack?.({
-            ok: false,
-            error: {
-              code: "SEND_FAILED",
-              message: error instanceof Error ? error.message : "Message failed.",
-            },
-          });
+          logger.error(
+            { err: error, requestId: socket.id, event: "message:send", guest: true },
+            "Guest socket message send failed",
+          );
+          ack?.({ ok: false, error: toSocketError(error) });
         }
       })();
     });
@@ -502,7 +522,10 @@ export const attachChatGateway = (httpServer: HttpServer): Server => {
             socket.disconnect(true);
           }
         } catch (error) {
-          logger.warn({ err: error }, "Session revalidation failed");
+          logger.warn(
+            { err: error, requestId: socket.id, event: "session:revalidate" },
+            "Session revalidation failed",
+          );
         }
       }
     })();

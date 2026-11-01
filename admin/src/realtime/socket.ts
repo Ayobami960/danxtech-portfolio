@@ -1,5 +1,5 @@
 import { io, type Socket } from "socket.io-client";
-import { API_ORIGIN, SOCKET_ORIGIN } from "../app/config";
+import { API_ORIGIN, SOCKET_ORIGIN } from "../utils/config";
 
 export type ConnectionStatus =
   | "offline"
@@ -103,6 +103,15 @@ export const connectRealtime = (): void => {
     if (error.message === "AUTH_EXPIRED" || error.message === "AUTH_REQUIRED") {
       setStatus("degraded");
       for (const handler of authHandlers) handler();
+      return;
+    }
+    // The API is up but a dependency (usually the database) is not. Keep the
+    // session and retry; never treat this as an expired login.
+    if (
+      error.message === "SERVICE_UNAVAILABLE" ||
+      error.message === "INTERNAL_ERROR"
+    ) {
+      setStatus("degraded");
       return;
     }
     setStatus("reconnecting");

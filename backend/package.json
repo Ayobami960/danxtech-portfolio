@@ -11,6 +11,7 @@
     "start": "node dist/src/server.js",
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts",
     "db:push": "drizzle-kit push",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",

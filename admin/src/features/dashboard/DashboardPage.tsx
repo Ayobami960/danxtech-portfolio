@@ -7,50 +7,87 @@ import {
   Plus,
   Upload,
 } from "lucide-react";
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import {
   useGetActivityQuery,
   useGetConversationsQuery,
   useGetStatsQuery,
 } from "../../api/adminApi";
-import { Card } from "../../components/Card";
 import { PageHeader } from "../../components/PageHeader";
 import { ErrorState, LoadingList, Skeleton } from "../../components/States";
+import { cn } from "../../lib/cn";
 import { formatDate, relativeTime, titleCase } from "../../lib/format";
+import "../../style/dashboard.css";
+
+const WEEKS = 20;
+/** The heatmap counts the audit-log entries this query returns. Lower it if your API caps pageSize. */
+const ACTIVITY_WINDOW = 100;
+const LIST_ROWS = 8;
+
+type Cell = { date: Date; count: number; future: boolean; today: boolean };
+
+const dayKey = (date: Date): string =>
+  `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+
+const level = (count: number): 0 | 1 | 2 | 3 =>
+  count === 0 ? 0 : count <= 2 ? 1 : count <= 5 ? 2 : 3;
+
+/** One cell per day, oldest first, filled column by column (Sunday to Saturday). */
+const buildCells = (timestamps: string[]): Cell[] => {
+  const counts = new Map<string, number>();
+  for (const iso of timestamps) {
+    const key = dayKey(new Date(iso));
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const start = new Date(today);
+  start.setDate(today.getDate() - today.getDay() - (WEEKS - 1) * 7);
+
+  return Array.from({ length: WEEKS * 7 }, (_, index) => {
+    const date = new Date(start);
+    date.setDate(start.getDate() + index);
+    return {
+      date,
+      count: counts.get(dayKey(date)) ?? 0,
+      future: date > today,
+      today: date.getTime() === today.getTime(),
+    };
+  });
+};
 
 const StatCard = ({
   label,
   value,
+  suffix,
   hint,
   icon,
-  accent = "#3b82f6",
+  tone,
+  hot = false,
 }: {
   label: string;
   value: string | number;
+  suffix?: string;
   hint?: string;
   icon: React.ReactNode;
-  accent?: string;
+  tone?: string;
+  hot?: boolean;
 }) => (
-  <div className="window-card relative overflow-hidden p-4">
-    <div
-      aria-hidden
-      className="absolute -right-6 -top-6 h-20 w-20 rounded-full blur-2xl"
-      style={{ background: `${accent}22` }}
-    />
-    <div className="flex items-start justify-between gap-3">
-      <div>
-        <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#7c8fa6]">
-          {label}
-        </div>
-        <div className="mt-2 font-grotesk text-2xl font-bold text-white">{value}</div>
-        {hint ? <div className="mt-1 text-[11px] text-[#5f7189]">{hint}</div> : null}
+  <div
+    className={cn("db-stat", hot && "hot")}
+    style={tone ? ({ "--tone": tone, "--tone-text": tone } as React.CSSProperties) : undefined}
+  >
+    <span className="db-stat-icon" aria-hidden="true">
+      {icon}
+    </span>
+    <div className="db-stat-body">
+      <div className="db-stat-label">{label}</div>
+      <div className="db-stat-value">
+        {value}
+        {suffix ? <small>{suffix}</small> : null}
       </div>
-      <span
-        className="flex h-9 w-9 items-center justify-center rounded-lg border"
-        style={{ borderColor: `${accent}33`, background: `${accent}12`, color: accent }}
-      >
-        {icon}
-      </span>
+      {hint ? <div className="db-stat-hint">{hint}</div> : null}
     </div>
   </div>
 );
@@ -58,7 +95,16 @@ const StatCard = ({
 export default function DashboardPage() {
   const stats = useGetStatsQuery();
   const conversations = useGetConversationsQuery({ page: 1, pageSize: 5 });
-  const activity = useGetActivityQuery({ page: 1, pageSize: 8 });
+  const activity = useGetActivityQuery({ page: 1, pageSize: ACTIVITY_WINDOW });
+
+  const entries = activity.data?.data ?? [];
+  const cells = useMemo(() => buildCells(entries.map((entry) => entry.createdAt)), [entries]);
+  const inWindow = cells.reduce((sum, cell) => sum + cell.count, 0);
+  const activeDays = cells.filter((cell) => cell.count > 0).length;
+  const first = cells[0]?.date;
+  const last = cells[cells.length - 1]?.date;
+  const shortDate = (date?: Date): string =>
+    date ? date.toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
 
   return (
     <>
@@ -79,34 +125,35 @@ export default function DashboardPage() {
       />
 
       {stats.isLoading ? (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="db-stats">
           {Array.from({ length: 4 }, (_, index) => (
-            <Skeleton key={index} className="h-28" />
+            <Skeleton key={index} className="h-[74px]" />
           ))}
         </div>
       ) : stats.error ? (
         <ErrorState error={stats.error} onRetry={stats.refetch} />
       ) : stats.data ? (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="db-stats">
           <StatCard
             label="Unread chats"
             value={stats.data.conversations.unread}
             hint={`${stats.data.conversations.total} conversations`}
-            icon={<Inbox size={17} />}
+            icon={<Inbox size={18} />}
+            hot={stats.data.conversations.unread > 0}
           />
           <StatCard
             label="Open conversations"
             value={stats.data.conversations.open}
             hint={`${stats.data.messages.total} contact-form messages`}
-            icon={<MessageSquare size={17} />}
-            accent="#f0a500"
+            icon={<MessageSquare size={18} />}
+            tone="var(--amb)"
           />
           <StatCard
             label="Projects"
-            value={`${stats.data.projects.published}/${stats.data.projects.total}`}
+            value={stats.data.projects.published}
+            suffix={`/${stats.data.projects.total}`}
             hint={`${stats.data.projects.draft} draft`}
-            icon={<FolderKanban size={17} />}
-            accent="#34d399"
+            icon={<FolderKanban size={18} />}
           />
           <StatCard
             label="Resume downloads"
@@ -116,107 +163,151 @@ export default function DashboardPage() {
                 ? `Updated ${stats.data.resume.updatedAt ? relativeTime(stats.data.resume.updatedAt) : "—"}`
                 : "No resume uploaded"
             }
-            icon={<Download size={17} />}
-            accent="#a78bfa"
+            icon={<Download size={18} />}
+            tone="var(--mid)"
           />
         </div>
       ) : null}
 
-      <div className="mt-3 font-mono text-[11px] text-[#5f7189]">
+      <div className="db-meta">
         Last content update:{" "}
-        <span className="text-[#9db0c6]">
-          {stats.data?.lastContentUpdate
-            ? formatDate(stats.data.lastContentUpdate)
-            : "—"}
-        </span>
+        <b>
+          {stats.data?.lastContentUpdate ? formatDate(stats.data.lastContentUpdate) : "—"}
+        </b>
       </div>
 
-      <div className="mt-6 grid gap-5 xl:grid-cols-2">
-        <Card
-          title="latest_conversations"
-          actions={
-            <Link to="/inbox" className="text-xs text-[#3b82f6] hover:underline">
-              Open inbox
-            </Link>
-          }
-          bodyClassName="p-3"
-        >
-          {conversations.isLoading ? (
-            <LoadingList rows={4} />
-          ) : conversations.error ? (
-            <ErrorState error={conversations.error} onRetry={conversations.refetch} />
-          ) : conversations.data && conversations.data.data.length > 0 ? (
-            <ul className="divide-y divide-white/5">
-              {conversations.data.data.map((conversation) => (
-                <li key={conversation.id}>
-                  <Link
-                    to={`/inbox/${conversation.id}`}
-                    className="flex items-start gap-3 rounded-lg px-2 py-3 hover:bg-white/5"
-                  >
-                    <span className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#3b82f6]/15 font-mono text-xs text-[#93c5fd]">
-                      {conversation.visitorName.slice(0, 1).toUpperCase()}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-center gap-2">
-                        <span className="truncate text-sm font-medium text-white">
-                          {conversation.visitorName}
-                        </span>
-                        {conversation.unreadForAdmin > 0 ? (
-                          <span className="rounded-full bg-[#3b82f6] px-1.5 py-0.5 font-mono text-[10px] text-white">
-                            {conversation.unreadForAdmin}
-                          </span>
-                        ) : null}
-                        <span className="ml-auto shrink-0 text-[11px] text-[#5f7189]">
-                          {relativeTime(conversation.lastMessageAt)}
-                        </span>
-                      </span>
-                      <span className="mt-0.5 block truncate text-xs text-[#7c8fa6]">
-                        {conversation.lastMessagePreview || conversation.subject || "No messages yet"}
-                      </span>
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="px-3 py-8 text-center text-sm text-[#7c8fa6]">
-              No conversations yet.
-            </p>
-          )}
-        </Card>
-
-        <Card title="recent_activity" bodyClassName="p-3">
+      <section className="db-panel" style={{ marginTop: 14 }} aria-label="Activity heatmap">
+        <div className="db-head">
+          <h2>Activity, last {WEEKS} weeks</h2>
+          {activity.data ? (
+            <small>
+              {inWindow} {inWindow === 1 ? "change" : "changes"} · {activeDays} active{" "}
+              {activeDays === 1 ? "day" : "days"}
+            </small>
+          ) : null}
+        </div>
+        <div className="db-body">
           {activity.isLoading ? (
-            <LoadingList rows={5} />
+            <Skeleton className="h-28" />
           ) : activity.error ? (
             <ErrorState error={activity.error} onRetry={activity.refetch} />
-          ) : activity.data && activity.data.data.length > 0 ? (
-            <ul className="space-y-1">
-              {activity.data.data.map((entry) => (
-                <li
-                  key={entry.id}
-                  className="flex items-start gap-3 rounded-lg px-2 py-2.5 hover:bg-white/5"
-                >
-                  <ArrowUpRight size={14} className="mt-1 shrink-0 text-[#3b82f6]" />
-                  <div className="min-w-0">
-                    <div className="text-sm text-[#dbe6f5]">
-                      {titleCase(entry.action)}
-                    </div>
-                    <div className="font-mono text-[10px] text-[#5f7189]">
-                      {entry.entity}
-                      {entry.entityId ? ` · ${entry.entityId.slice(0, 8)}` : ""} ·{" "}
-                      {relativeTime(entry.createdAt)}
+          ) : (
+            <div className="db-heat-wrap" style={{ marginTop: 0 }}>
+              <div className="db-heat-scroll">
+                <div className="db-heat" role="img" aria-label={`${inWindow} changes in the last ${WEEKS} weeks`}>
+                  {cells.map((cell) => (
+                    <span
+                      key={cell.date.getTime()}
+                      className={cn(
+                        "db-cell",
+                        `l${level(cell.count)}`,
+                        cell.future && "future",
+                        cell.today && "today",
+                      )}
+                      title={`${cell.date.toLocaleDateString(undefined, {
+                        weekday: "short",
+                        month: "short",
+                        day: "numeric",
+                      })}: ${cell.count} ${cell.count === 1 ? "change" : "changes"}`}
+                    />
+                  ))}
+                </div>
+              </div>
+              <div className="db-heat-foot">
+                <span>
+                  {shortDate(first)} – {shortDate(last)}
+                </span>
+                <span className="db-legend">
+                  less <i /> <i className="l1" /> <i className="l2" /> <i className="l3" /> more
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <div className="db-grid">
+        <section className="db-panel" aria-label="Latest conversations">
+          <div className="db-head">
+            <h2>Latest conversations</h2>
+            <Link to="/inbox">Open inbox</Link>
+          </div>
+          {conversations.isLoading ? (
+            <div style={{ padding: 12 }}>
+              <LoadingList rows={4} />
+            </div>
+          ) : conversations.error ? (
+            <div style={{ padding: 12 }}>
+              <ErrorState error={conversations.error} onRetry={conversations.refetch} />
+            </div>
+          ) : conversations.data && conversations.data.data.length > 0 ? (
+            <ul className="db-list">
+              {conversations.data.data.map((conversation) => {
+                const unread = conversation.unreadForAdmin;
+                return (
+                  <li key={conversation.id}>
+                    <Link to={`/inbox/${conversation.id}`} className="db-row">
+                      <span className={cn("db-avatar", unread > 0 && "hot")}>
+                        {conversation.visitorName.slice(0, 1).toUpperCase()}
+                      </span>
+                      <span className="db-main">
+                        <span className="db-line">
+                          <span className="db-name">{conversation.visitorName}</span>
+                          {unread > 0 ? <span className="db-badge">{unread}</span> : null}
+                          <span className="db-time">
+                            {relativeTime(conversation.lastMessageAt)}
+                          </span>
+                        </span>
+                        <span className="db-sub" style={{ display: "block" }}>
+                          {conversation.lastMessagePreview ||
+                            conversation.subject ||
+                            "No messages yet"}
+                        </span>
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="db-empty">No conversations yet.</p>
+          )}
+        </section>
+
+        <section className="db-panel" aria-label="Recent activity">
+          <div className="db-head">
+            <h2>Recent activity</h2>
+          </div>
+          {activity.isLoading ? (
+            <div style={{ padding: 12 }}>
+              <LoadingList rows={5} />
+            </div>
+          ) : activity.error ? (
+            <div style={{ padding: 12 }}>
+              <ErrorState error={activity.error} onRetry={activity.refetch} />
+            </div>
+          ) : entries.length > 0 ? (
+            <ul className="db-list">
+              {entries.slice(0, LIST_ROWS).map((entry) => (
+                <li key={entry.id}>
+                  <div className="db-row">
+                    <ArrowUpRight size={14} className="db-act-icon" />
+                    <div className="db-main">
+                      <div className="db-act-title">{titleCase(entry.action)}</div>
+                      <div className="db-act-meta">
+                        {entry.entity}
+                        {entry.entityId ? ` · ${entry.entityId.slice(0, 8)}` : ""} ·{" "}
+                        {relativeTime(entry.createdAt)}
+                      </div>
                     </div>
                   </div>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="px-3 py-8 text-center text-sm text-[#7c8fa6]">
-              Activity will appear here as you edit content.
-            </p>
+            <p className="db-empty">Activity will appear here as you edit content.</p>
           )}
-        </Card>
+        </section>
       </div>
     </>
   );

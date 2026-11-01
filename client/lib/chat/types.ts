@@ -63,7 +63,13 @@ export type ChatPhase =
 
 export type ChatLink = { conversationId: string; token: string };
 
-export type ConnectionState = "connecting" | "live" | "reconnecting" | "degraded";
+export type ConnectionState =
+  | "connecting"
+  | "live"
+  | "reconnecting"
+  | "degraded"
+  /** The browser reports no network; distinct from a server/realtime failure. */
+  | "offline";
 
 export type StoredChatSession = {
   token: string;

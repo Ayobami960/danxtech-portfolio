@@ -18,6 +18,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { errorMessage } from "@/lib/api";
 import {
   uploadChatAttachment,
   useConfirmCodeMutation,
@@ -52,6 +53,7 @@ import {
   emitSeen,
   emitTyping,
   isChatLive,
+  reconnectChat,
   sendOverSocket,
 } from "@/lib/chat/connection";
 import { useChatDispatch, useChatSelector } from "@/lib/chat/hooks";
@@ -95,12 +97,9 @@ const readChatLink = (): ChatLink | null => {
   return conversationId && token ? { conversationId, token } : null;
 };
 
-/** Human-readable message from an RTK Query error. */
-const apiErrorText = (error: unknown, fallback: string): string => {
-  const data = (error as { data?: { error?: { message?: unknown } } }).data;
-  const message = data?.error?.message;
-  return typeof message === "string" && message.length > 0 ? message : fallback;
-};
+/** Human-readable message from an RTK Query error (local copy only). */
+const apiErrorText = (error: unknown, fallback: string): string =>
+  errorMessage(error, fallback);
 
 const formatTime = (iso: string): string =>
   new Intl.DateTimeFormat("en-GB", {
@@ -452,9 +451,55 @@ export default function ChatScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /* ------------------------------ online/offline ------------------------------ */
+  useEffect(() => {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      dispatch(connectionChanged("offline"));
+    }
+
+    const handleOffline = (): void => {
+      dispatch(connectionChanged("offline"));
+    };
+
+    const handleOnline = (): void => {
+      reconnectChat();
+      dispatch(connectionChanged(isChatLive() ? "live" : "connecting"));
+      // A socket that was never disconnected will not fire `connect`, so pull
+      // anything missed while the browser was offline. Otherwise the socket's
+      // own connect handler performs the catch-up fetch.
+      if (!ready || closed || !isChatLive()) return;
+      void fetchMessages({ after: latestSeqRef.current })
+        .unwrap()
+        .then((page) => {
+          if (page.data.length === 0) return;
+          dispatch(messagesReceived(page.data));
+          latestSeqRef.current = Math.max(
+            latestSeqRef.current,
+            ...page.data.map((message) => message.seq),
+          );
+        })
+        .catch(() => undefined);
+    };
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, [ready, closed, fetchMessages, dispatch]);
+
   /* --------------------------- polling when degraded -------------------------- */
   useEffect(() => {
-    if (!ready || conversation?.status === "closed" || connection === "live") return;
+    // No polling while the browser has no network: every request would fail.
+    if (
+      !ready ||
+      conversation?.status === "closed" ||
+      connection === "live" ||
+      connection === "offline"
+    ) {
+      return;
+    }
     const interval = window.setInterval(() => {
       void fetchMessages({ after: latestSeqRef.current })
         .unwrap()
@@ -519,7 +564,11 @@ export default function ChatScreen() {
         dispatch(messageAccepted({ clientMsgId, message: ack.message }));
       } else {
         dispatch(messageFailed({ clientMsgId }));
-        if (ack.error?.message) setSendError(ack.error.message);
+        if (ack.error) {
+          setSendError(
+            errorMessage(ack.error, "Message not sent. Check your connection and retry."),
+          );
+        }
       }
       return;
     }
@@ -534,9 +583,11 @@ export default function ChatScreen() {
       dispatch(messageFailed({ clientMsgId }));
       const status = (error as { status?: number | string }).status;
       setSendError(
-        status === 429
-          ? "You're sending messages too quickly. Please wait a moment."
-          : "Message not sent. Check your connection and retry.",
+        navigator.onLine === false
+          ? "You're offline. Reconnect, then tap retry."
+          : status === 429
+            ? "You're sending messages too quickly. Please wait a moment."
+            : "Message not sent. Check your connection and retry.",
       );
     }
   };
@@ -579,9 +630,7 @@ export default function ChatScreen() {
       });
     } catch (error) {
       setSendError(
-        error instanceof Error && error.message
-          ? error.message
-          : "The attachment could not be uploaded. Please try again.",
+        errorMessage(error, "The attachment could not be uploaded. Please try again."),
       );
     } finally {
       setUploading(false);
@@ -863,17 +912,26 @@ export default function ChatScreen() {
 
         {connection !== "live" && !closed ? (
           <div
-            className={`flex items-center gap-2 px-5! py-2! font-mono text-[11px] ${
-              connection === "degraded"
-                ? "bg-[#f0a500]/10 text-[#f0a500]"
-                : "bg-white/5 text-[#9db0c6]"
+            className={`flex items-center gap-2 border-b border-white/5 px-5! py-2! font-mono text-[11px] ${
+              connection === "offline"
+                ? "bg-[#f43f5e]/10 text-[#fca5a5]"
+                : connection === "degraded"
+                  ? "bg-[#f0a500]/10 text-[#f0a500]"
+                  : "bg-white/5 text-[#9db0c6]"
             }`}
             role="status"
+            aria-live="polite"
           >
-            {connection === "degraded" ? <WifiOff size={13} /> : <Loader2 size={13} className="animate-spin" />}
-            {connection === "degraded"
-              ? "Slow connection — messages still send and new replies arrive every few seconds."
-              : "Reconnecting… messages you send now will be delivered automatically."}
+            {connection === "degraded" || connection === "offline" ? (
+              <WifiOff size={13} />
+            ) : (
+              <Loader2 size={13} className="animate-spin" />
+            )}
+            {connection === "offline"
+              ? "You're offline. New messages load automatically when your connection returns."
+              : connection === "degraded"
+                ? "Slow connection — messages still send and new replies arrive every few seconds."
+                : "Reconnecting… messages you send now will be delivered automatically."}
           </div>
         ) : null}
 

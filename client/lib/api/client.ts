@@ -1,4 +1,11 @@
 import type { ApiErrorBody } from "./types";
+import {
+  FRIENDLY,
+  friendlyMessage,
+  looksLikeInternalError,
+  safeFieldErrors,
+  type FriendlyStatus,
+} from "./friendly-errors";
 
 /** Local development API; never used by a production build. */
 const LOCAL_API = "http://localhost:8000";
@@ -58,14 +65,27 @@ export const resumeDownloadUrl = (
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
+  readonly requestId?: string;
+  readonly fields?: Record<string, string>;
   readonly details?: unknown;
 
-  constructor(status: number, code: string, message: string, details?: unknown) {
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    options: {
+      requestId?: string;
+      fields?: Record<string, string>;
+      details?: unknown;
+    } = {},
+  ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
-    this.details = details;
+    if (options.requestId) this.requestId = options.requestId;
+    if (options.fields) this.fields = options.fields;
+    if (options.details !== undefined) this.details = options.details;
   }
 }
 
@@ -78,30 +98,42 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isErrorBody = (value: unknown): value is ApiErrorBody =>
   isRecord(value) &&
   isRecord(value.error) &&
-  typeof value.error.code === "string" &&
-  typeof value.error.message === "string";
+  typeof value.error.code === "string";
 
-const FALLBACK_MESSAGE = "Something went wrong. Please try again.";
+/**
+ * Build a safe error from an HTTP response. The server's `message` is ignored:
+ * copy is chosen locally from the code and status.
+ */
+const fromResponse = (status: number, payload: unknown): ApiError => {
+  if (isErrorBody(payload)) {
+    const { code, requestId, details } = payload.error;
+    const fields =
+      safeFieldErrors(payload.error.fields) ?? safeFieldErrors(details);
+    return new ApiError(status, code, friendlyMessage(status, code, fields), {
+      ...(requestId ? { requestId } : {}),
+      ...(fields ? { fields } : {}),
+      ...(details !== undefined ? { details } : {}),
+    });
+  }
+
+  const code =
+    status === 401
+      ? "UNAUTHORIZED"
+      : status === 404
+        ? "NOT_FOUND"
+        : status === 429
+          ? "RATE_LIMITED"
+          : status === 503
+            ? "SERVICE_UNAVAILABLE"
+            : status >= 500
+              ? "INTERNAL_ERROR"
+              : "ERROR";
+  return new ApiError(status, code, friendlyMessage(status, code));
+};
 
 const toApiError = async (response: Response): Promise<ApiError> => {
   const payload: unknown = await response.json().catch(() => null);
-
-  if (isErrorBody(payload)) {
-    return new ApiError(
-      response.status,
-      payload.error.code,
-      payload.error.message,
-      payload.error.details,
-    );
-  }
-
-  if (response.status === 429) {
-    return new ApiError(429, "RATE_LIMITED", "Too many requests. Please try again later.");
-  }
-  if (response.status >= 500) {
-    return new ApiError(response.status, "INTERNAL_ERROR", FALLBACK_MESSAGE);
-  }
-  return new ApiError(response.status, "ERROR", FALLBACK_MESSAGE);
+  return fromResponse(response.status, payload);
 };
 
 export type ApiRequestOptions = {
@@ -132,8 +164,8 @@ const request = async (
       0,
       timedOut ? "TIMEOUT" : "NETWORK",
       timedOut
-        ? "The server took too long to respond."
-        : "The server could not be reached.",
+        ? FRIENDLY.timeout
+        : FRIENDLY.offline,
     );
   }
 };
@@ -187,9 +219,50 @@ export const apiPost = async <T>(
   return (await response.json()) as T;
 };
 
-/** Safe text for the UI: the API's own message, never a stack trace. */
-export const errorMessage = (error: unknown, fallback = FALLBACK_MESSAGE): string => {
-  if (isApiError(error)) return error.message;
-  if (error instanceof Error && error.message) return error.message;
+const statusOf = (value: unknown): FriendlyStatus | null => {
+  if (value === "FETCH_ERROR" || value === "TIMEOUT") return value;
+  if (typeof value === "number") return value;
+  return null;
+};
+
+/** Accepts an `ApiError`, an RTK Query error or a socket ack error. */
+const asApiError = (error: unknown): ApiError | null => {
+  if (isApiError(error)) return error;
+  if (!isRecord(error)) return null;
+
+  if ("status" in error) {
+    const status = statusOf(error.status);
+    if (status !== null) {
+      return fromResponse(
+        typeof status === "number" ? status : status === "TIMEOUT" ? 408 : 0,
+        "data" in error ? error.data : null,
+      );
+    }
+  }
+
+  // Socket ack / handshake errors are `{ code, message }` without a status.
+  if (typeof error.code === "string") {
+    return new ApiError(0, error.code, friendlyMessage(0, error.code));
+  }
+
+  return null;
+};
+
+/**
+ * Safe text for the UI. Server-provided text is never shown: known errors map
+ * to local copy, and unknown values fall back to the caller's contextual text.
+ */
+export const errorMessage = (
+  error: unknown,
+  fallback: string = FRIENDLY.generic,
+): string => {
+  const api = asApiError(error);
+  if (api) return api.message;
+
+  // Plain `Error`s are built by client-side helpers (uploads); their messages
+  // are local, but are still discarded if they look like internal detail.
+  if (error instanceof Error && error.message) {
+    return looksLikeInternalError(error.message) ? fallback : error.message;
+  }
   return fallback;
 };

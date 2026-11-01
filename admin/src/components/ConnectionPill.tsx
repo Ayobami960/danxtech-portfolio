@@ -1,4 +1,4 @@
-import { useAppSelector } from "../app/hooks";
+import { useAppSelector } from "../store/hooks";
 import { cn } from "../lib/cn";
 
 export const ConnectionPill = () => {
@@ -13,18 +13,14 @@ export const ConnectionPill = () => {
           : connection === "degraded"
             ? "Degraded"
             : "Offline";
-  const tone =
-    connection === "live"
-      ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
-      : connection === "degraded" || connection === "offline"
-        ? "border-amber-400/30 bg-amber-400/10 text-amber-300"
-        : "border-white/10 bg-white/5 text-[#9db0c6]";
 
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider",
-        tone,
+        "pill",
+        connection === "live" && "live",
+        (connection === "degraded" || connection === "offline") && "warn",
+        (connection === "connecting" || connection === "reconnecting") && "pulse",
       )}
       title={
         connection === "degraded"
@@ -32,16 +28,6 @@ export const ConnectionPill = () => {
           : "Realtime connection"
       }
     >
-      <span
-        className={cn(
-          "h-1.5 w-1.5 rounded-full",
-          connection === "live"
-            ? "bg-emerald-400"
-            : connection === "connecting" || connection === "reconnecting"
-              ? "animate-pulse bg-amber-300"
-              : "bg-amber-400",
-        )}
-      />
       {label}
     </span>
   );

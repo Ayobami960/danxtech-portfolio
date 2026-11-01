@@ -1,3 +1,4 @@
+import { X } from "lucide-react";
 import { useEffect, useRef, type ReactNode } from "react";
 
 export const FormDialog = ({
@@ -35,37 +36,33 @@ export const FormDialog = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 p-4 sm:items-center"
+      className="ov"
       role="dialog"
       aria-modal="true"
       aria-labelledby="form-dialog-title"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
     >
-      <div className="window-card my-auto w-full max-w-lg p-6">
+      <div className="dialog wide">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2
-              id="form-dialog-title"
-              className="font-grotesk text-lg font-semibold text-white"
-            >
-              {title}
-            </h2>
-            {description ? (
-              <p className="mt-1 text-sm text-[#9db0c6]">{description}</p>
-            ) : null}
+            <h2 id="form-dialog-title">{title}</h2>
+            {description ? <p className="d">{description}</p> : null}
           </div>
           <button
             ref={closeRef}
             type="button"
-            className="rounded-md p-1 text-[#7c8fa6] hover:bg-white/5 hover:text-white"
+            className="ib"
             aria-label="Close dialog"
             onClick={onClose}
           >
-            ×
+            <X />
           </button>
         </div>
 
         <form
-          className="mt-4 space-y-4"
+          className="form-stack mt-4"
           noValidate
           onSubmit={(event) => {
             event.preventDefault();
@@ -73,8 +70,8 @@ export const FormDialog = ({
           }}
         >
           {children}
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" className="btn btn-ghost" onClick={onClose}>
+          <div className="a dialog-actions flex justify-end gap-2 pt-1">
+            <button type="button" className="btn" onClick={onClose}>
               Cancel
             </button>
             <button type="submit" className="btn btn-primary" disabled={busy}>

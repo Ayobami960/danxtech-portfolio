@@ -109,7 +109,7 @@ export default function ContactSection({
       }
 
       if (err.status === 400 || err.code === "VALIDATION_ERROR") {
-        setFieldErrors(fieldErrorsFrom(err.details));
+        setFieldErrors(err.fields ?? fieldErrorsFrom(err.details));
         setError(err.message);
       } else if (err.code === "DUPLICATE_MESSAGE" || err.status === 409) {
         setError("This message was already received — no need to send it again.");

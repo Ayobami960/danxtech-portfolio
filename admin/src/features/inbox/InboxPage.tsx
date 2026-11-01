@@ -2,11 +2,12 @@ import { MessagesSquare } from "lucide-react";
 import { useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useGetConversationQuery } from "../../api/adminApi";
-import { useAppDispatch } from "../../app/hooks";
+import { useAppDispatch } from "../../store/hooks";
 import { EmptyState } from "../../components/States";
 import { selectConversation } from "../ui/uiSlice";
 import { ConversationList } from "./ConversationList";
 import { Thread, ThreadActions } from "./Thread";
+import "../../style/inbox.css";
 
 export default function InboxPage() {
   const { conversationId } = useParams<{ conversationId: string }>();
@@ -21,9 +22,9 @@ export default function InboxPage() {
   }, [conversationId, dispatch]);
 
   return (
-    <div className="window-card -mx-1 flex h-[calc(100vh-11rem)] min-h-[520px] overflow-hidden">
+    <div className="cx-shell">
       <div
-        className={`${conversationId ? "hidden" : "block"} w-full shrink-0 border-r border-white/5 lg:block lg:w-[340px]`}
+        className={`${conversationId ? "hidden" : "block"} w-full shrink-0 lg:block lg:w-[340px]`}
       >
         <ConversationList
           selectedId={conversationId ?? null}
@@ -41,7 +42,7 @@ export default function InboxPage() {
             onBack={() => navigate("/inbox")}
           />
         ) : (
-          <div className="flex h-full items-center justify-center p-8">
+          <div className="cx-panel items-center justify-center p-8">
             <EmptyState
               title="Select a conversation"
               description="Live chat and contact-form messages appear here in real time."
@@ -52,8 +53,10 @@ export default function InboxPage() {
       </div>
 
       {conversationId && conversation.data ? (
-        <aside className="hidden w-[280px] shrink-0 overflow-y-auto border-l border-white/5 xl:block">
-          <ThreadActions conversation={conversation.data} />
+        <aside className="hidden w-[280px] shrink-0 xl:block">
+          <div className="cx-panel cx-scroll">
+            <ThreadActions conversation={conversation.data} />
+          </div>
         </aside>
       ) : null}
     </div>

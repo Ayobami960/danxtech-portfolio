@@ -56,6 +56,16 @@ export const disconnectChat = (): void => {
 
 export const isChatLive = (): boolean => socket?.connected ?? false;
 
+/**
+ * Nudge the socket after the browser reports it is online again. Socket.IO
+ * retries on its own, but a connection created while offline or suspended may
+ * be sitting in a closed manager state, so an explicit connect is cheap.
+ */
+export const reconnectChat = (): void => {
+  if (!socket || socket.connected) return;
+  socket.connect();
+};
+
 export const sendOverSocket = (
   payload: {
     clientMsgId: string;

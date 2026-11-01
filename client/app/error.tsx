@@ -16,8 +16,10 @@ export default function Error({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error("Route error:", error.message);
-  }, [error]);
+    // Log the digest only: the message can carry text from a failed render and
+    // must not be copied into the browser console verbatim.
+    console.error("Route error:", error.digest ?? error.name);
+  }, [error.digest, error.name]);
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#0a0f1e] px-6!">

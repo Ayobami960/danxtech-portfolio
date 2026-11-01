@@ -1,13 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import {
-  ArrowLeft,
-  ExternalLink,
-  FileText,
-  Save,
-  Trash2,
-  Upload,
-  X,
-} from "lucide-react";
+import { ChevronLeft, ExternalLink, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -22,22 +14,38 @@ import {
   useUpdateProjectMutation,
 } from "../../api/adminApi";
 import { errorMessage, getFieldErrors } from "../../api/errors";
-import { resolveMediaUrl } from "../../app/config";
+import { resolveMediaUrl } from "../../utils/config";
 import { Card } from "../../components/Card";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
-import { ColorField, EmojiField, TagInput } from "../../components/Fields";
+import {
+  ColorField,
+  EmojiField,
+  TECH_SUGGESTIONS,
+  TagInput,
+  Toggle,
+} from "../../components/Fields";
 import { PageHeader } from "../../components/PageHeader";
 import { SortableList } from "../../components/SortableList";
 import { ErrorState, LoadingList } from "../../components/States";
+import { UploadDrop } from "../../components/UploadDrop";
+import { cn } from "../../lib/cn";
+import {
+  COMPLETENESS_CHECKS,
+  completenessHint,
+  completenessScore,
+  type CompletenessInput,
+} from "../../lib/completeness";
 import { projectSchema, type ProjectForm } from "../../lib/schemas";
 import { useUnsavedWarning } from "../../lib/useUnsavedWarning";
-import { ACCEPT_CLOUDINARY_IMAGES, ACCEPT_PDF } from "../uploads/accept";
-import { FileDropzone } from "../uploads/FileDropzone";
 import {
   deleteFromCloudinary,
   MAX_UPLOAD_BYTES,
   uploadToCloudinary,
 } from "../../lib/cloudinary";
+
+const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
+const PDF_TYPES = ["application/pdf"] as const;
+const SCORE_CIRCUMFERENCE = 226.2; // r=36
 
 /** Matches MAX_UPLOAD_BYTES in lib/cloudinary: the helper rejects anything above. */
 const IMAGE_UPLOAD_MAX_BYTES = MAX_UPLOAD_BYTES;
@@ -226,77 +234,96 @@ export default function ProjectEditorPage() {
 
   const gallery = project.data?.gallery ?? [];
   const resolve = resolveMediaUrl;
+  const saving = createState.isLoading || updateState.isLoading;
+  const dirty = form.formState.isDirty;
+  const errors = form.formState.errors;
+
+  const scoreInput: CompletenessInput = {
+    title: watched.title ?? "",
+    description: watched.description ?? "",
+    tech: watched.tech ?? [],
+    stats: watched.stats ?? [],
+    liveUrl: watched.liveUrl,
+    githubUrl: watched.githubUrl,
+    hasCover: Boolean(project.data?.coverImage),
+    galleryCount: gallery.length,
+    hasDocument: Boolean(project.data?.document),
+  };
+  const score = completenessScore(scoreInput);
+  const saveLabel = saving
+    ? "Saving…"
+    : uploading
+      ? "Uploading…"
+      : isNew
+        ? "Save draft"
+        : "Save changes";
+  const statList = (watched.stats ?? []).filter((stat) => stat && stat.trim());
 
   return (
-    <>
+    <div className=" pb-28">
       <PageHeader
-        eyebrow={isNew ? "Projects" : project.data?.slug}
-        title={isNew ? "New project" : watched.title || "Edit project"}
+        back={
+          <Link to="/projects" className="back">
+            <ChevronLeft size={14} /> Projects
+            {project.data?.slug ? <span>/ {project.data.slug}</span> : null}
+          </Link>
+        }
+        title={watched.title?.trim() || (isNew ? "New project" : "Edit project")}
         description={
           isNew
-            ? "Save a draft first — cover and gallery images can be added afterwards."
-            : "Changes appear on the public site within about a minute."
+            ? "Save a draft first. Cover, PDF and gallery images can be added afterwards."
+            : "Changes appear on your public site within about a minute."
         }
         actions={
-          <>
-            <Link to="/projects" className="btn btn-ghost">
-              <ArrowLeft size={15} /> Back
-            </Link>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => void onSubmit()}
-              disabled={
-                createState.isLoading || updateState.isLoading || uploading
-              }
-            >
-              <Save size={15} />
-              {createState.isLoading || updateState.isLoading
-                ? "Saving…"
-                : uploading
-                  ? "Uploading…"
-                  : "Save"}
-            </button>
-          </>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => void onSubmit()}
+            disabled={saving || uploading}
+          >
+            {saveLabel}
+          </button>
         }
       />
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="space-y-5">
-          <Card title="project_fields">
-            <form onSubmit={onSubmit} className="space-y-4" noValidate>
+      <div className="cols">
+        <div className="stack">
+          <Card title="Project details" meta="project_fields">
+            <form onSubmit={onSubmit} className="form-stack" noValidate>
               <div>
                 <label className="label" htmlFor="title">
                   Title
                 </label>
-                <input id="title" className="field" maxLength={80} {...form.register("title")} />
-                {form.formState.errors.title ? (
-                  <p className="mt-1 text-xs text-red-300">
-                    {form.formState.errors.title.message}
-                  </p>
-                ) : null}
+                <input
+                  id="title"
+                  className={cn("field", errors.title && "is-invalid")}
+                  maxLength={80}
+                  placeholder="Name your project"
+                  aria-invalid={Boolean(errors.title)}
+                  {...form.register("title")}
+                />
+                {errors.title ? <p className="field-error">{errors.title.message}</p> : null}
               </div>
 
               <div>
                 <label className="label" htmlFor="description">
-                  Description · {watched.description?.length ?? 0}/600
+                  Description <em>{watched.description?.length ?? 0}/600</em>
                 </label>
                 <textarea
                   id="description"
-                  className="field min-h-28"
+                  className="field"
                   maxLength={600}
+                  placeholder="What does it do, and for whom?"
                   {...form.register("description")}
                 />
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="two">
                 <div>
                   <span className="label">Icon</span>
                   <EmojiField
                     value={watched.icon}
-                    onChange={(value) =>
-                      form.setValue("icon", value, { shouldDirty: true })
-                    }
+                    onChange={(value) => form.setValue("icon", value, { shouldDirty: true })}
                   />
                 </div>
                 <div>
@@ -311,234 +338,239 @@ export default function ProjectEditorPage() {
               </div>
 
               <div>
-                <span className="label">Tech stack · max 15</span>
+                <div className="label">
+                  <span>Tech stack</span>
+                  <em>{watched.tech.length}/15</em>
+                </div>
                 <TagInput
                   value={watched.tech}
                   max={15}
                   maxLength={40}
+                  suggestions={TECH_SUGGESTIONS}
                   onChange={(value) => form.setValue("tech", value, { shouldDirty: true })}
                 />
               </div>
 
               <div>
-                <span className="label">Stats · max 6</span>
-                <div className="space-y-2">
-                  {stats.fields.map((field, index) => (
-                    <div key={field.id} className="flex gap-2">
-                      <input
-                        className="field"
-                        maxLength={60}
-                        placeholder="e.g. 500+ listings"
-                        {...form.register(`stats.${index}`)}
-                      />
-                      <button
-                        type="button"
-                        className="btn btn-ghost !px-2"
-                        aria-label="Remove stat"
-                        onClick={() => stats.remove(index)}
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
-                  ))}
-                  {stats.fields.length < 6 ? (
+                <div className="label">
+                  <span>Stats</span>
+                  <em>{stats.fields.length}/6</em>
+                </div>
+                {stats.fields.map((field, index) => (
+                  <div key={field.id} className="srow">
+                    <input
+                      className="field"
+                      maxLength={60}
+                      placeholder="e.g. 500+ listings"
+                      aria-label={`Stat ${index + 1}`}
+                      {...form.register(`stats.${index}`)}
+                    />
                     <button
                       type="button"
-                      className="btn btn-ghost"
-                      onClick={() => stats.append("" as never)}
+                      className="ib"
+                      aria-label="Remove stat"
+                      onClick={() => stats.remove(index)}
                     >
-                      Add stat
+                      <X />
                     </button>
-                  ) : null}
-                </div>
+                  </div>
+                ))}
+                {stats.fields.length < 6 ? (
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => stats.append("" as never)}
+                  >
+                    + Add stat
+                  </button>
+                ) : null}
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="two">
                 <div>
                   <label className="label" htmlFor="liveUrl">
-                    Live URL (https)
+                    Live URL
                   </label>
                   <input
                     id="liveUrl"
-                    className="field"
+                    className={cn("field", errors.liveUrl && "is-invalid")}
                     placeholder="https://"
+                    aria-invalid={Boolean(errors.liveUrl)}
                     {...form.register("liveUrl")}
                   />
-                  {form.formState.errors.liveUrl ? (
-                    <p className="mt-1 text-xs text-red-300">
-                      {form.formState.errors.liveUrl.message}
-                    </p>
+                  {errors.liveUrl ? (
+                    <p className="field-error">{errors.liveUrl.message}</p>
                   ) : null}
                 </div>
                 <div>
                   <label className="label" htmlFor="githubUrl">
-                    GitHub URL (https)
+                    GitHub URL
                   </label>
                   <input
                     id="githubUrl"
-                    className="field"
+                    className={cn("field", errors.githubUrl && "is-invalid")}
                     placeholder="https://"
+                    aria-invalid={Boolean(errors.githubUrl)}
                     {...form.register("githubUrl")}
                   />
-                  {form.formState.errors.githubUrl ? (
-                    <p className="mt-1 text-xs text-red-300">
-                      {form.formState.errors.githubUrl.message}
-                    </p>
+                  {errors.githubUrl ? (
+                    <p className="field-error">{errors.githubUrl.message}</p>
                   ) : null}
                 </div>
               </div>
 
-              <label className="flex items-center gap-2 text-sm text-[#cbd8e8]">
-                <input type="checkbox" {...form.register("published")} />
-                Published (visible on the public site)
-              </label>
+              <div className="pubrow">
+                <Toggle
+                  id="published"
+                  label="Published"
+                  checked={Boolean(watched.published)}
+                  onChange={(value) => form.setValue("published", value, { shouldDirty: true })}
+                />
+                <div>
+                  Published
+                  <small>Visible on your public site</small>
+                </div>
+              </div>
             </form>
           </Card>
 
           {!isNew && id ? (
             <>
-              <Card title="cover_image">
-                {project.data?.coverImage ? (
-                  <img
-                    src={resolve(project.data.coverImage) ?? ""}
-                    alt="Project cover"
-                    className="mb-3 h-48 w-full rounded-xl border border-white/10 object-cover"
-                    onError={(event) => {
-                      event.currentTarget.hidden = true;
+              <Card title="Cover image" meta="cover_image">
+                <div className="form-stack" style={{ gap: 14 }}>
+                  {project.data?.coverImage ? (
+                    <div className="cvp">
+                      <img
+                        src={resolve(project.data.coverImage) ?? ""}
+                        alt="Project cover"
+                        onError={(event) => {
+                          event.currentTarget.hidden = true;
+                        }}
+                      />
+                      <i>Current cover</i>
+                    </div>
+                  ) : null}
+                  <UploadDrop
+                    accept={IMAGE_TYPES}
+                    maxSizeBytes={IMAGE_UPLOAD_MAX_BYTES}
+                    label={
+                      project.data?.coverImage ? "Drop a replacement cover" : "Drop a cover image"
+                    }
+                    hint="JPEG, PNG or WebP, up to 5 MB. Replacing removes the previous file."
+                    disabled={uploadingCover || setCoverState.isLoading}
+                    uploading={uploadingCover || setCoverState.isLoading}
+                    progress={coverProgress}
+                    onFiles={(files) => {
+                      const file = files[0];
+                      if (file) void attachCover(file);
                     }}
                   />
-                ) : null}
-                <FileDropzone
-                  accept={ACCEPT_CLOUDINARY_IMAGES}
-                  maxSizeBytes={IMAGE_UPLOAD_MAX_BYTES}
-                  label="Drop a cover image (JPEG, PNG or WebP · max 5 MB)"
-                  hint="Uploads go straight to Cloudinary; replacing removes the previous file."
-                  disabled={uploadingCover || setCoverState.isLoading}
-                  onFiles={(files) => {
-                    const file = files[0];
-                    if (file) void attachCover(file);
-                  }}
-                />
-                {uploadingCover || setCoverState.isLoading ? (
-                  <p className="mt-2 text-[11px] text-[#9db0c6]">
-                    Uploading cover… {coverProgress}%
-                  </p>
-                ) : null}
+                </div>
               </Card>
 
-              <Card title="project_document">
-                {project.data?.document ? (
-                  <div className="mb-3 flex items-center gap-3 rounded-lg border border-white/10 p-3">
-                    <FileText size={18} className="shrink-0 text-[#3b82f6]" />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm text-[#cbd8e8]">
-                        {project.data.document.name}
-                      </p>
-                      <p className="font-mono text-[10px] text-[#5f7189]">
-                        {formatBytes(project.data.document.sizeBytes)}
-                      </p>
+              <Card title="Project document" meta="project_document">
+                <div className="form-stack" style={{ gap: 0 }}>
+                  {project.data?.document ? (
+                    <div className="chip">
+                      <div className="pf">PDF</div>
+                      <div>
+                        <b>{project.data.document.name}</b>
+                        <small>{formatBytes(project.data.document.sizeBytes)}</small>
+                      </div>
+                      <a
+                        href={project.data.document.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="ib"
+                        aria-label="Open document"
+                        title="Open"
+                      >
+                        <ExternalLink />
+                      </a>
+                      <button
+                        type="button"
+                        className="ib d"
+                        aria-label="Remove document"
+                        title="Remove"
+                        onClick={() => setRemovingDocument(true)}
+                      >
+                        <Trash2 />
+                      </button>
                     </div>
-                    <a
-                      href={project.data.document.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="btn btn-ghost ml-auto !px-2"
-                      aria-label="Open document"
-                    >
-                      <ExternalLink size={14} />
-                    </a>
-                    <button
-                      type="button"
-                      className="rounded p-1 text-[#7c8fa6] hover:bg-red-500/10 hover:text-red-300"
-                      aria-label="Remove document"
-                      onClick={() => setRemovingDocument(true)}
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                ) : (
-                  <p className="mb-3 text-xs text-[#5f7189]">
-                    No PDF attached. Link a case study or one-pager to this project.
-                  </p>
-                )}
-                <FileDropzone
-                  accept={ACCEPT_PDF}
-                  maxSizeBytes={DOCUMENT_MAX_BYTES}
-                  label={
-                    project.data?.document
-                      ? "Drop a replacement PDF (max 5 MB)"
-                      : "Drop a project PDF (max 5 MB)"
-                  }
-                  hint="Uploads go straight to Cloudinary; replacing removes the previous file."
-                  disabled={uploadingDocument}
-                  onFiles={(files) => {
-                    const file = files[0];
-                    if (file) void attachDocument(file);
-                  }}
-                />
-                {uploadingDocument ? (
-                  <p className="mt-2 text-[11px] text-[#9db0c6]">
-                    Uploading PDF… {documentProgress}%
-                  </p>
-                ) : null}
+                  ) : (
+                    <p className="none" style={{ margin: "0 0 14px" }}>
+                      No PDF attached. Link a case study or one-pager to this project.
+                    </p>
+                  )}
+                  <UploadDrop
+                    accept={PDF_TYPES}
+                    maxSizeBytes={DOCUMENT_MAX_BYTES}
+                    label={
+                      project.data?.document ? "Drop a replacement PDF" : "Drop a project PDF"
+                    }
+                    hint="PDF only, up to 5 MB."
+                    disabled={uploadingDocument}
+                    uploading={uploadingDocument}
+                    progress={documentProgress}
+                    onFiles={(files) => {
+                      const file = files[0];
+                      if (file) void attachDocument(file);
+                    }}
+                  />
+                </div>
               </Card>
 
-              <Card title={`gallery_${gallery.length}/${MAX_GALLERY_IMAGES}`}>
-                <FileDropzone
-                  accept={ACCEPT_CLOUDINARY_IMAGES}
+              <Card title="Gallery" meta={`gallery_${gallery.length}/${MAX_GALLERY_IMAGES}`}>
+                <UploadDrop
+                  accept={IMAGE_TYPES}
                   multiple
                   maxSizeBytes={IMAGE_UPLOAD_MAX_BYTES}
-                  label="Drop gallery images (JPEG, PNG or WebP · max 5 MB each)"
-                  hint={`Up to ${MAX_GALLERY_IMAGES} images total`}
+                  label="Drop gallery images"
+                  hint={`JPEG, PNG or WebP, up to 5 MB each. Up to ${MAX_GALLERY_IMAGES} images.`}
                   disabled={
                     gallery.length >= MAX_GALLERY_IMAGES ||
                     uploadingGallery ||
                     addGalleryState.isLoading
                   }
+                  uploading={uploadingGallery || addGalleryState.isLoading}
+                  progress={galleryProgress}
                   onFiles={(files) => {
                     const room = Math.max(0, MAX_GALLERY_IMAGES - gallery.length);
                     if (files.length > room) {
-                      toast.error(
-                        `Only ${MAX_GALLERY_IMAGES} gallery images are allowed.`,
-                      );
+                      toast.error(`Only ${MAX_GALLERY_IMAGES} gallery images are allowed.`);
                       return;
                     }
                     void attachGallery(files);
                   }}
                 />
-                {uploadingGallery ? (
-                  <p className="mt-2 text-[11px] text-[#9db0c6]">
-                    Uploading gallery images… {galleryProgress}%
-                  </p>
-                ) : null}
 
                 {gallery.length > 0 ? (
                   <div className="mt-4">
                     <SortableList
+                      variant="gallery"
                       items={gallery.map((image) => ({
                         id: image.id,
+                        label: `Reorder image ${image.sortOrder + 1}`,
                         node: (
-                          <div className="flex items-center gap-3">
+                          <>
                             <img
                               src={resolve(image.url) ?? ""}
                               alt=""
-                              className="h-12 w-16 rounded border border-white/10 object-cover"
+                              className="gt"
                               onError={(event) => {
                                 event.currentTarget.hidden = true;
                               }}
                             />
-                            <span className="font-mono text-[10px] text-[#5f7189]">
-                              #{image.sortOrder + 1}
-                            </span>
+                            <span className="gname">Image {image.sortOrder + 1}</span>
                             <button
                               type="button"
-                              className="ml-auto rounded p-1 text-[#7c8fa6] hover:bg-red-500/10 hover:text-red-300"
-                              aria-label="Delete image"
+                              className="ib d"
+                              aria-label={`Delete image ${image.sortOrder + 1}`}
                               onClick={() => setRemovingImage(image.id)}
                             >
-                              <Trash2 size={14} />
+                              <Trash2 />
                             </button>
-                          </div>
+                          </>
                         ),
                       }))}
                       onReorder={(ids) => {
@@ -549,100 +581,140 @@ export default function ProjectEditorPage() {
                     />
                   </div>
                 ) : (
-                  <p className="mt-3 text-xs text-[#5f7189]">
+                  <p className="none">
                     No gallery images yet. The project card still works without them.
                   </p>
                 )}
               </Card>
             </>
           ) : (
-            <Card title="uploads">
-              <p className="text-sm text-[#7c8fa6]">
-                <Upload size={14} className="mr-1 inline" />
-                Save the project first, then cover, PDF and gallery uploads become available.
-              </p>
-            </Card>
+            <div className="lock">
+              <div style={{ fontSize: "1.6rem" }} aria-hidden>
+                🔒
+              </div>
+              <div>
+                <b>Uploads unlock after the first save</b>
+                Save the project first, then the cover, PDF and gallery uploads become available.
+              </div>
+            </div>
           )}
         </div>
 
-        <div className="space-y-4">
-          <div className="sticky top-20 space-y-3">
-            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#5f7189]">
-              Live preview
-            </div>
-            <article
-              className="window-card overflow-hidden"
-              style={{ borderColor: `${watched.accentColor}44` }}
-            >
-              <div className="h-28 bg-[#0a0f1e]">
+        <aside className="side-col">
+          <div>
+            <p className="cap">Live preview</p>
+            <article className="pv" style={{ borderColor: `${watched.accentColor}55` }}>
+              <div
+                className="cv"
+                style={{
+                  background: project.data?.coverImage ? undefined : `${watched.accentColor}22`,
+                }}
+              >
                 {project.data?.coverImage ? (
                   <img
                     src={resolve(project.data.coverImage) ?? ""}
                     alt=""
-                    className="h-full w-full object-cover"
                     onError={(event) => {
                       event.currentTarget.hidden = true;
                     }}
                   />
                 ) : (
-                  <div
-                    className="flex h-full items-center justify-center text-4xl"
-                    style={{ background: `${watched.accentColor}18` }}
-                  >
-                    {watched.icon}
-                  </div>
+                  watched.icon
                 )}
               </div>
-              <div className="p-4">
-                <div className="flex items-center gap-2">
-                  <span className="text-lg">{watched.icon}</span>
-                  <h3 className="font-grotesk font-semibold text-white">
-                    {watched.title || "Project title"}
-                  </h3>
-                </div>
-                <p className="mt-2 line-clamp-4 text-xs leading-relaxed text-[#8fa1b8]">
-                  {watched.description || "Your project description will appear here."}
-                </p>
-                <div className="mt-3 flex flex-wrap gap-1">
+              <div className="pb">
+                <h3>
+                  <span>{watched.icon}</span>
+                  <span>{watched.title || "Project title"}</span>
+                  <span className={cn("pill sm", watched.published && "live")}>
+                    {watched.published ? "Live" : "Draft"}
+                  </span>
+                </h3>
+                <p>{watched.description || "Your project description will appear here."}</p>
+                <div className="tg">
                   {watched.tech.slice(0, 6).map((tech) => (
-                    <span
-                      key={tech}
-                      className="rounded-full border border-white/10 px-2 py-0.5 font-mono text-[9px] text-[#9db0c6]"
-                    >
-                      {tech}
-                    </span>
+                    <span key={tech}>{tech}</span>
                   ))}
                 </div>
-                {watched.stats.filter(Boolean).length > 0 ? (
-                  <ul className="mt-3 space-y-1">
-                    {watched.stats.filter(Boolean).map((stat) => (
-                      <li key={stat} className="text-[11px] text-[#8fa1b8]">
+                {statList.length > 0 ? (
+                  <ul>
+                    {statList.map((stat, index) => (
+                      <li key={`${stat}-${index}`}>
                         <span style={{ color: watched.accentColor }}>▹</span> {stat}
                       </li>
                     ))}
                   </ul>
                 ) : null}
-                <div className="mt-3 flex gap-3 text-[11px]">
-                  {watched.liveUrl ? (
-                    <span className="inline-flex items-center gap-1 text-[#3b82f6]">
-                      Live demo <ExternalLink size={11} />
-                    </span>
-                  ) : null}
-                  {watched.githubUrl ? <span className="text-[#9db0c6]">GitHub</span> : null}
+                <div className="lk">
+                  {watched.liveUrl ? <span>Live demo ↗</span> : null}
+                  {watched.githubUrl ? <span>GitHub</span> : null}
                 </div>
               </div>
             </article>
-            <p className="text-[11px] text-[#5f7189]">
-              Preview updates as you type. Images appear after upload.
-            </p>
           </div>
-        </div>
+
+          <section className="card score">
+            <div className="sc">
+              <div className="sr2">
+                <svg viewBox="0 0 84 84" aria-hidden>
+                  <circle cx="42" cy="42" r="36" fill="none" stroke="var(--line2)" strokeWidth="6" />
+                  <circle
+                    className="sarc"
+                    cx="42"
+                    cy="42"
+                    r="36"
+                    fill="none"
+                    stroke="var(--acc)"
+                    strokeWidth="6"
+                    strokeLinecap="round"
+                    strokeDasharray={SCORE_CIRCUMFERENCE}
+                    strokeDashoffset={SCORE_CIRCUMFERENCE * (1 - score / 100)}
+                    transform="rotate(-90 42 42)"
+                  />
+                </svg>
+                <b>{score}</b>
+              </div>
+              <div>
+                <strong>Completeness</strong>
+                <p>{completenessHint(score)}</p>
+              </div>
+            </div>
+            <ul className="cl">
+              {COMPLETENESS_CHECKS.map((check) => {
+                const ok = check.passed(scoreInput);
+                return (
+                  <li key={check.label} className={ok ? "ok" : undefined}>
+                    <i>✓</i>
+                    {check.label}
+                    <em>+{check.weight}</em>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        </aside>
+      </div>
+
+      <div className={cn("floatbar unsaved", dirty && "on")} role="region" aria-label="Unsaved changes">
+        <b>Unsaved changes</b>
+        <button type="button" onClick={() => form.reset()} disabled={saving}>
+          Discard
+        </button>
+        <button
+          type="button"
+          className="sv"
+          onClick={() => void onSubmit()}
+          disabled={saving || uploading}
+        >
+          {saveLabel}
+        </button>
       </div>
 
       <ConfirmDialog
         open={removingDocument}
         title="Remove the project PDF?"
         description="The file is removed from storage and cannot be recovered."
+        confirmLabel="Remove PDF"
         busy={updateState.isLoading}
         onClose={() => setRemovingDocument(false)}
         onConfirm={() => {
@@ -661,6 +733,7 @@ export default function ProjectEditorPage() {
         open={Boolean(removingImage)}
         title="Delete this gallery image?"
         description="The file is removed from storage and cannot be recovered."
+        confirmLabel="Delete image"
         onClose={() => setRemovingImage(null)}
         onConfirm={() => {
           if (!id || !removingImage) return;
@@ -673,6 +746,6 @@ export default function ProjectEditorPage() {
             .catch((error: unknown) => toast.error(errorMessage(error)));
         }}
       />
-    </>
+    </div>
   );
 }

@@ -79,10 +79,10 @@ shape serves REST only:
 
 ```bash
 npm run typecheck
-npm run lint
 npm run build
-npm run storage:check            # verify every stored key exists in ImageKit
+npm test                        # error-handler suite (Node test runner)
+npm run storage:check           # verify every stored key exists in Cloudinary
 ```
 
-No automated tests are included. See `docs/MANUAL_QA.md` for the end-to-end
-checklist and `docs/BACKEND_AUDIT.md` for the endpoint audit.
+See `docs/MANUAL_QA.md` for the end-to-end checklist and
+`docs/BACKEND_AUDIT.md` for the endpoint audit.

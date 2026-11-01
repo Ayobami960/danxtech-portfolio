@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import type { ConversationFilters } from "../../api/adminApi";
 import { useGetConversationsQuery } from "../../api/adminApi";
 import type { Conversation } from "../../api/types";
-import { useAppDispatch, useAppSelector } from "../../app/hooks";
+import { useAppDispatch, useAppSelector } from "../../store/hooks";
 import { Pagination, EmptyState, ErrorState, LoadingList } from "../../components/States";
 import { cn } from "../../lib/cn";
 import { relativeTime } from "../../lib/format";
@@ -43,20 +43,7 @@ const filterArgs = (
 });
 
 const StatusChip = ({ status }: { status: Conversation["status"] }) => (
-  <span
-    className={cn(
-      "rounded-full border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide",
-      status === "new"
-        ? "border-[#3b82f6]/40 bg-[#3b82f6]/15 text-[#93c5fd]"
-        : status === "open"
-          ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
-          : status === "archived"
-            ? "border-[#f0a500]/30 bg-[#f0a500]/10 text-[#f0a500]"
-            : "border-white/10 bg-white/5 text-[#7c8fa6]",
-    )}
-  >
-    {status}
-  </span>
+  <span className={cn("cx-chip", status)}>{status}</span>
 );
 
 export const ConversationList = ({
@@ -85,33 +72,26 @@ export const ConversationList = ({
   });
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="border-b border-white/5 p-3">
-        <div className="flex flex-wrap gap-1">
+    <div className="cx-panel">
+      <div className="cx-list-head">
+        <div className="cx-pills" role="tablist" aria-label="Conversation filters">
           {VIEWS.map((entry) => (
             <button
               key={entry.key}
               type="button"
+              role="tab"
+              aria-selected={view === entry.key}
               onClick={() => dispatch(setInboxView(entry.key))}
-              className={cn(
-                "rounded-md px-2 py-1 font-mono text-[10px] uppercase tracking-wide transition-colors",
-                view === entry.key
-                  ? "bg-[#3b82f6]/20 text-white ring-1 ring-[#3b82f6]/30"
-                  : "text-[#7c8fa6] hover:bg-white/5 hover:text-white",
-              )}
+              className={cn("cx-pill", view === entry.key && "on")}
             >
               {entry.label}
             </button>
           ))}
         </div>
-        <label className="relative mt-2 block">
-          <Search
-            size={14}
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#5f7189]"
-          />
+        <label className="cx-search">
+          <Search size={14} />
           <span className="sr-only">Search conversations</span>
           <input
-            className="field pl-8"
             value={search}
             placeholder="Search name, email, subject…"
             onChange={(event) => setSearch(event.target.value)}
@@ -119,67 +99,51 @@ export const ConversationList = ({
         </label>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-2">
+      <div className="cx-rows">
         {query.isLoading ? (
           <LoadingList rows={5} />
         ) : query.error ? (
           <ErrorState error={query.error} onRetry={query.refetch} />
         ) : query.data && query.data.data.length > 0 ? (
-          <ul className="space-y-1">
-            {query.data.data.map((conversation) => (
-              <li key={conversation.id}>
-                <button
-                  type="button"
-                  onClick={() => onSelect(conversation)}
-                  className={cn(
-                    "w-full rounded-lg border px-3 py-2.5 text-left transition-colors",
-                    selectedId === conversation.id
-                      ? "border-[#3b82f6]/40 bg-[#3b82f6]/10"
-                      : "border-transparent hover:border-white/10 hover:bg-white/5",
-                  )}
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#3b82f6]/15 font-mono text-[10px] text-[#93c5fd]">
-                      {conversation.visitorName.slice(0, 1).toUpperCase()}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-white">
-                      {conversation.visitorName}
-                    </span>
-                    {presence[conversation.id]?.visitorOnline ? (
-                      <span
-                        className="h-2 w-2 rounded-full bg-emerald-400"
-                        title="Visitor online"
-                      />
-                    ) : null}
-                    <span className="shrink-0 text-[10px] text-[#5f7189]">
-                      {relativeTime(conversation.lastMessageAt)}
-                    </span>
-                  </div>
-                  <div className="mt-1 flex items-center gap-1.5">
-                    <StatusChip status={conversation.status} />
-                    {conversation.isSpam ? (
-                      <span className="rounded-full border border-red-400/30 bg-red-400/10 px-1.5 py-0.5 font-mono text-[9px] uppercase text-red-300">
-                        spam
+          <ul>
+            {query.data.data.map((conversation) => {
+              const unread = conversation.unreadForAdmin;
+              const online = presence[conversation.id]?.visitorOnline;
+              return (
+                <li key={conversation.id}>
+                  <button
+                    type="button"
+                    onClick={() => onSelect(conversation)}
+                    className={cn("cx-row", selectedId === conversation.id && "sel")}
+                  >
+                    <div className="cx-row-top">
+                      <span className={cn("cx-avatar", unread > 0 && "hot")}>
+                        {conversation.visitorName.slice(0, 1).toUpperCase()}
                       </span>
-                    ) : null}
-                    {conversation.starred ? (
-                      <span className="text-[10px] text-[#f0a500]">★</span>
-                    ) : null}
-                    {conversation.unreadForAdmin > 0 ? (
-                      <span className="ml-auto rounded-full bg-[#3b82f6] px-1.5 py-0.5 font-mono text-[9px] font-bold text-white">
-                        {conversation.unreadForAdmin}
+                      <span className="cx-row-name">{conversation.visitorName}</span>
+                      {online ? <span className="cx-online" title="Visitor online" /> : null}
+                      <span className="cx-row-time">
+                        {relativeTime(conversation.lastMessageAt)}
                       </span>
-                    ) : null}
-                  </div>
-                  <div className="mt-1 truncate text-xs text-[#7c8fa6]">
-                    {conversation.subject ? (
-                      <span className="text-[#9db0c6]">{conversation.subject} · </span>
-                    ) : null}
-                    {conversation.lastMessagePreview || "No messages yet"}
-                  </div>
-                </button>
-              </li>
-            ))}
+                    </div>
+                    <div className="cx-row-meta">
+                      <StatusChip status={conversation.status} />
+                      {conversation.isSpam ? <span className="cx-chip spam">spam</span> : null}
+                      {conversation.starred ? <span className="cx-star">★</span> : null}
+                      {unread > 0 ? (
+                        <span className="cx-badge" style={{ marginLeft: "auto" }}>
+                          {unread}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="cx-row-prev">
+                      {conversation.subject ? <b>{conversation.subject} · </b> : null}
+                      {conversation.lastMessagePreview || "No messages yet"}
+                    </div>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         ) : (
           <EmptyState
@@ -189,16 +153,16 @@ export const ConversationList = ({
         )}
       </div>
 
-      <div className="border-t border-white/5 px-3 pb-3">
-        {query.data ? (
+      {query.data ? (
+        <div className="cx-list-foot">
           <Pagination
             page={page}
             pageSize={20}
             total={query.data.meta.total}
             onPage={(next) => dispatch(setInboxPage(next))}
           />
-        ) : null}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 };

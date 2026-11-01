@@ -26,7 +26,7 @@ import {
 } from "../../api/adminApi";
 import type { TwoFactorStatus } from "../../api/types";
 import { errorMessage } from "../../api/errors";
-import { useAppDispatch } from "../../app/hooks";
+import { useAppDispatch } from "../../store/hooks";
 import { Card } from "../../components/Card";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { PageHeader } from "../../components/PageHeader";

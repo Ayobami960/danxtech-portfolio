@@ -21,8 +21,8 @@ import {
 import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useGetUnreadConversationsQuery } from "../api/adminApi";
-import { CLIENT_URL } from "../app/config";
-import { useAppDispatch, useAppSelector } from "../app/hooks";
+import { CLIENT_URL } from "../utils/config";
+import { useAppDispatch, useAppSelector } from "../store/hooks";
 import { useIdleLogout } from "../features/auth/useIdleLogout";
 import { logout } from "../features/auth/thunks";
 import {
@@ -32,6 +32,7 @@ import {
 } from "../features/ui/uiSlice";
 import { cn } from "../lib/cn";
 import { ConnectionPill } from "./ConnectionPill";
+import { OfflineNotice } from "./OfflineNotice";
 
 const groups = [
   {
@@ -101,38 +102,29 @@ export const Shell = ({ children }: { children: ReactNode }) => {
   }, [unread?.unread]);
 
   return (
-    <div className="min-h-screen bg-[#0a0f1e] text-[#e6edf7]">
+    <div className="min-h-screen">
       <button
         type="button"
         aria-label="Close navigation"
-        className={cn(
-          "fixed inset-0 z-30 bg-black/60 lg:hidden",
-          sidebarOpen ? "block" : "hidden",
-        )}
+        className={cn("scrim lg:hidden", sidebarOpen ? "block" : "hidden")}
         onClick={() => dispatch(closeSidebar())}
       />
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-40 flex flex-col border-r border-white/5 bg-[#0e1528] transition-transform lg:translate-x-0",
+          "side fixed inset-y-0 left-0 z-40 flex flex-col transition-transform lg:translate-x-0",
           sidebarCollapsed ? "w-[220px] lg:w-[76px]" : "w-[250px]",
           sidebarOpen ? "translate-x-0" : "-translate-x-full",
         )}
       >
-        <div className="flex h-16 items-center gap-2 border-b border-white/5 px-4">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#3b82f6]/30 bg-[#3b82f6]/10 font-grotesk text-xs font-bold text-[#3b82f6]">
-            AD
-          </div>
+        <div className="side-head">
+          <div className="brand-mark">AD</div>
           <div className={cn("min-w-0", sidebarCollapsed && "lg:hidden")}>
-            <div className="truncate font-grotesk text-sm font-semibold text-white">
-              Admin
-            </div>
-            <div className="truncate font-mono text-[10px] text-[#5f7189]">
-              portfolio_software
-            </div>
+            <div className="brand-name truncate">Admin</div>
+            <div className="brand-sub truncate">portfolio_software</div>
           </div>
           <button
             type="button"
-            className="ml-auto rounded-md p-1 text-[#7c8fa6] hover:bg-white/5 hover:text-white lg:hidden"
+            className="tb-ghost ml-auto lg:hidden"
             aria-label="Close sidebar"
             onClick={() => dispatch(closeSidebar())}
           >
@@ -143,15 +135,10 @@ export const Shell = ({ children }: { children: ReactNode }) => {
         <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
           {groups.map((group) => (
             <div key={group.label}>
-              <div
-                className={cn(
-                  "mb-2 px-2 font-mono text-[10px] uppercase tracking-[0.18em] text-[#4d5f77]",
-                  sidebarCollapsed && "lg:hidden",
-                )}
-              >
+              <div className={cn("nav-label", sidebarCollapsed && "lg:hidden")}>
                 {group.label}
               </div>
-              <div className="space-y-1">
+              <div className="grid gap-1">
                 {group.items.map((item) => {
                   const Icon = item.icon;
                   return (
@@ -160,22 +147,14 @@ export const Shell = ({ children }: { children: ReactNode }) => {
                       to={item.to}
                       end={item.to === "/"}
                       title={item.label}
-                      className={({ isActive }) =>
-                        cn(
-                          "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors",
-                          isActive
-                            ? "bg-[#3b82f6]/15 text-white ring-1 ring-[#3b82f6]/25"
-                            : "text-[#8fa1b8] hover:bg-white/5 hover:text-white",
-                          sidebarCollapsed && "lg:justify-center",
-                        )
-                      }
+                      className={cn("nav-link", sidebarCollapsed && "lg:justify-center")}
                     >
                       <Icon size={16} className="shrink-0" />
                       <span className={cn("truncate", sidebarCollapsed && "lg:hidden")}>
                         {item.label}
                       </span>
                       {"badge" in item && item.badge && unread && unread.unread > 0 ? (
-                        <span className="ml-auto rounded-full bg-[#3b82f6] px-1.5 py-0.5 font-mono text-[10px] font-bold text-white">
+                        <span className={cn("nav-badge", sidebarCollapsed && "lg:hidden")}>
                           {unread.unread > 99 ? "99+" : unread.unread}
                         </span>
                       ) : null}
@@ -189,7 +168,7 @@ export const Shell = ({ children }: { children: ReactNode }) => {
 
         <button
           type="button"
-          className="hidden items-center gap-2 border-t border-white/5 px-4 py-3 text-xs text-[#7c8fa6] hover:text-white lg:flex"
+          className="collapse-btn"
           onClick={() => dispatch(toggleSidebarCollapsed())}
           aria-label="Collapse sidebar"
         >
@@ -204,37 +183,36 @@ export const Shell = ({ children }: { children: ReactNode }) => {
           sidebarCollapsed ? "lg:pl-[76px]" : "lg:pl-[250px]",
         )}
       >
-        <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-white/5 bg-[#0a0f1e]/90 px-4 backdrop-blur sm:px-6">
+        <OfflineNotice />
+        <header className="topbar">
           <button
             type="button"
-            className="rounded-md p-1.5 text-[#9db0c6] hover:bg-white/5 hover:text-white lg:hidden"
+            className="tb-ghost lg:hidden"
             aria-label="Open navigation"
             onClick={() => dispatch(toggleSidebar())}
           >
             <Menu size={20} />
           </button>
-          <h1 className="font-grotesk text-base font-semibold text-white">
-            {pageTitle(location.pathname)}
-          </h1>
+          <p className="topbar-title">{pageTitle(location.pathname)}</p>
           <div className="ml-auto flex items-center gap-2 sm:gap-3">
             <ConnectionPill />
             <a
               href={CLIENT_URL}
               target="_blank"
               rel="noopener noreferrer"
-              className="hidden items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-1.5 text-xs text-[#9db0c6] hover:border-[#3b82f6]/40 hover:text-white sm:inline-flex"
+              className="tb-btn tb-site"
             >
               View site <ExternalLink size={13} />
             </a>
             <div className="relative">
               <button
                 type="button"
-                className="flex items-center gap-2 rounded-lg border border-white/10 px-2 py-1.5 text-xs text-[#cbd8e8] hover:border-[#3b82f6]/40"
+                className="tb-btn"
                 onClick={() => setMenuOpen((open) => !open)}
                 aria-haspopup="menu"
                 aria-expanded={menuOpen}
               >
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#3b82f6]/20 font-mono text-[10px] text-[#93c5fd]">
+                <span className="avatar">
                   {user?.email.slice(0, 1).toUpperCase() ?? "A"}
                 </span>
                 <span className="hidden max-w-[150px] truncate sm:block">
@@ -242,14 +220,11 @@ export const Shell = ({ children }: { children: ReactNode }) => {
                 </span>
               </button>
               {menuOpen ? (
-                <div
-                  role="menu"
-                  className="absolute right-0 mt-2 w-52 overflow-hidden rounded-xl border border-white/10 bg-[#131c35] shadow-2xl"
-                >
+                <div role="menu" className="menu">
                   <NavLink
                     to="/account"
                     role="menuitem"
-                    className="flex items-center gap-2 px-4 py-2.5 text-sm text-[#cbd8e8] hover:bg-white/5"
+                    className="menu-item"
                     onClick={() => setMenuOpen(false)}
                   >
                     <UserRound size={15} /> Account & 2FA
@@ -257,7 +232,7 @@ export const Shell = ({ children }: { children: ReactNode }) => {
                   <button
                     type="button"
                     role="menuitem"
-                    className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-red-300 hover:bg-red-500/10"
+                    className="menu-item bad"
                     onClick={() => void dispatch(logout())}
                   >
                     <LogOut size={15} /> Sign out
@@ -270,7 +245,7 @@ export const Shell = ({ children }: { children: ReactNode }) => {
 
         <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
 
-        <footer className="border-t border-white/5 px-4 py-4 font-mono text-[10px] text-[#4d5f77] sm:px-6">
+        <footer className="foot">
           Private admin · single owner account · session data never persisted
         </footer>
       </div>
@@ -280,15 +255,11 @@ export const Shell = ({ children }: { children: ReactNode }) => {
           role="alertdialog"
           aria-modal="true"
           aria-label="Session about to expire"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          className="ov"
         >
-          <div className="window-card w-full max-w-sm p-6 text-center">
-            <h2 className="font-grotesk text-lg font-semibold text-white">
-              Still there?
-            </h2>
-            <p className="mt-2 text-sm text-[#9db0c6]">
-              You will be signed out in about two minutes because of inactivity.
-            </p>
+          <div className="dialog text-center">
+            <h2>Still there?</h2>
+            <p className="d">You will be signed out in about two minutes because of inactivity.</p>
             <button
               type="button"
               className="btn btn-primary mt-5 w-full"
@@ -298,7 +269,7 @@ export const Shell = ({ children }: { children: ReactNode }) => {
             </button>
             <button
               type="button"
-              className="btn btn-ghost mt-2 w-full"
+              className="btn mt-2 w-full"
               onClick={() => void dispatch(logout())}
             >
               Sign out now
@@ -306,7 +277,6 @@ export const Shell = ({ children }: { children: ReactNode }) => {
           </div>
         </div>
       ) : null}
-
     </div>
   );
 };

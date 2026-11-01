@@ -20,11 +20,14 @@ export type ApiErrorCode =
   | "INVITE_INVALID"
   | "CHAT_CLOSED";
 
-/** Error envelope: `{ error: { code, message, details? } }`. */
+/** Error envelope: `{ error: { code, message, requestId, fields? } }`. */
 export type ApiErrorBody = {
   error: {
     code: string;
     message: string;
+    requestId?: string;
+    fields?: Record<string, string>;
+    /** Legacy shape, still parsed for field-level messages. */
     details?: unknown;
   };
 };

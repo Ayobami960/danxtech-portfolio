@@ -5,6 +5,7 @@ export const ConfirmDialog = ({
   title,
   description,
   confirmLabel = "Delete",
+  tone = "danger",
   busy = false,
   onConfirm,
   onClose,
@@ -13,6 +14,8 @@ export const ConfirmDialog = ({
   title: string;
   description?: string;
   confirmLabel?: string;
+  /** `danger` for destructive actions, `primary` for everything else. */
+  tone?: "danger" | "primary";
   busy?: boolean;
   onConfirm: () => void;
   onClose: () => void;
@@ -33,25 +36,24 @@ export const ConfirmDialog = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+      className="ov"
       role="dialog"
       aria-modal="true"
       aria-labelledby="confirm-title"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
     >
-      <div className="window-card w-full max-w-md p-6">
-        <h2 id="confirm-title" className="font-grotesk text-lg font-semibold text-white">
-          {title}
-        </h2>
-        {description ? (
-          <p className="mt-2 text-sm text-[#9db0c6]">{description}</p>
-        ) : null}
-        <div className="mt-6 flex justify-end gap-2">
-          <button ref={cancelRef} type="button" className="btn btn-ghost" onClick={onClose}>
+      <div className="dialog">
+        <h2 id="confirm-title">{title}</h2>
+        {description ? <p className="d">{description}</p> : null}
+        <div className="a">
+          <button ref={cancelRef} type="button" className="btn" onClick={onClose}>
             Cancel
           </button>
           <button
             type="button"
-            className="btn btn-danger"
+            className={tone === "danger" ? "btn btn-danger" : "btn btn-primary"}
             onClick={onConfirm}
             disabled={busy}
           >

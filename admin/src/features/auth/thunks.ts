@@ -1,11 +1,11 @@
 import { createAsyncThunk } from "@reduxjs/toolkit";
-import type { RootState } from "../../app/store";
+import type { RootState } from "../../store/store";
 import {
   apiRequest,
   fetchCsrfToken,
   refreshSession,
 } from "../../api/client";
-import type { ApiError } from "../../api/errors";
+import { isTransientError, type ApiError } from "../../api/errors";
 import type { AdminUser } from "../../api/types";
 import {
   loggedOut,
@@ -13,6 +13,7 @@ import {
   setAuthenticated,
   setAwaitingTwoFactor,
   setCsrfToken,
+  setSessionUnavailable,
   updateUser,
 } from "./authSlice";
 
@@ -42,6 +43,13 @@ export const bootstrapSession = createAsyncThunk<
   if (result.ok) {
     dispatch(setAuthenticated(result.data.admin));
     return result.data.admin;
+  }
+
+  // A database outage or dropped connection is not a sign-out. Surface a
+  // retryable error screen instead of sending the admin to the login form.
+  if (isTransientError(result.error)) {
+    dispatch(setSessionUnavailable());
+    return null;
   }
 
   dispatch(setAnonymous());

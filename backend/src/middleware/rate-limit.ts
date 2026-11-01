@@ -3,8 +3,8 @@ import rateLimitImport, {
   type Options,
   type RateLimitRequestHandler,
 } from "express-rate-limit";
-import type { Request, Response } from "express";
-import { ERROR_CODES } from "../lib/errors.js";
+import type { NextFunction, Request, Response } from "express";
+import { AppError, ERROR_CODES } from "../lib/errors.js";
 
 type RateLimitFn = (options?: Partial<Options>) => RateLimitRequestHandler;
 
@@ -25,13 +25,20 @@ type LimiterOptions = {
   skipSuccessfulRequests?: boolean;
 };
 
-const handler = (_request: Request, response: Response): void => {
-  response.status(429).json({
-    error: {
-      code: ERROR_CODES.RATE_LIMITED,
-      message: "Too many requests. Please try again later.",
-    },
-  });
+// Delegates to the central error handler so the 429 body has the same shape
+// (code, message, requestId) as every other error response.
+const handler = (
+  _request: Request,
+  _response: Response,
+  next: NextFunction,
+): void => {
+  next(
+    new AppError(
+      429,
+      ERROR_CODES.RATE_LIMITED,
+      "Too many requests. Please try again later.",
+    ),
+  );
 };
 
 export const createLimiter = ({

@@ -5,8 +5,8 @@ import {
   type FetchBaseQueryError,
 } from "@reduxjs/toolkit/query/react";
 import { Mutex } from "async-mutex";
-import { API_BASE } from "../app/config";
-import type { RootState } from "../app/store";
+import { API_BASE } from "../utils/config";
+import type { RootState } from "../store/store";
 import { normalizeError, type ApiError } from "./errors";
 import {
   setCsrfToken,

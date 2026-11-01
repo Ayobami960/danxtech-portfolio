@@ -1,7 +1,13 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import type { AdminUser } from "../../api/types";
 
-export type AuthStatus = "unknown" | "authenticated" | "anonymous" | "awaiting2fa";
+export type AuthStatus =
+  | "unknown"
+  | "authenticated"
+  | "anonymous"
+  | "awaiting2fa"
+  /** The session probe could not reach the API; the admin stays signed in. */
+  | "unavailable";
 
 export type AuthState = {
   status: AuthStatus;
@@ -39,6 +45,11 @@ const authSlice = createSlice({
       state.status = "awaiting2fa";
       state.user = null;
     },
+    setSessionUnavailable(state) {
+      // A 503/network failure must never look like a sign-out: keep the user
+      // and the CSRF token so a retry can succeed.
+      state.status = "unavailable";
+    },
     sessionExpired(state) {
       state.status = "anonymous";
       state.user = null;
@@ -62,6 +73,7 @@ export const {
   setAuthenticated,
   setAnonymous,
   setAwaitingTwoFactor,
+  setSessionUnavailable,
   sessionExpired,
   loggedOut,
   updateUser,
