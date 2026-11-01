@@ -1,6 +1,6 @@
 /* About editor: stacked sections + live phone preview. Built on theme.css tokens. */
 
-.ab-layout { display: grid; grid-template-columns: minmax(0, 1fr) 316px; gap: 20px; align-items: start; }
+.ab-layout { display: grid; grid-template-columns: minmax(0, 1fr) 450px; gap: 20px; align-items: start; }
 @media (max-width: 1023px) { .ab-layout { grid-template-columns: minmax(0, 1fr); } }
 .ab-forms { display: grid; gap: 14px; min-width: 0; }
 
@@ -14,7 +14,9 @@
 .ab-head p { margin: 0; font-size: .78rem; color: var(--mute); }
 .ab-head small { margin-left: auto; font: 500 .72rem var(--mono); color: var(--mute); white-space: nowrap; }
 .ab-body { padding: 12px 18px 18px; display: grid; gap: 14px; }
-
+.ab-body .field{
+  resize: none;
+}
 .ab-item-head { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; }
 .ab-item-head .label { margin: 0; }
 .ab-tools { margin-left: auto; display: flex; gap: 2px; }
@@ -98,7 +100,7 @@
 .ab-preview-cap small::before { content: "● "; }
 
 .ab-phone {
-  width: 292px; max-width: 100%; margin: 0 auto; padding: 8px; border-radius: 40px;
+  width: 100%; max-width: 100%; margin: 0 auto; padding: 8px; border-radius: 40px;
   background: var(--s2); border: 1px solid var(--line2); box-shadow: var(--sh);
 }
 .ab-screen {

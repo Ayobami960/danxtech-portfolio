@@ -1,8 +1,9 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Pencil, Plus, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { GripVertical, Pencil, Plus, Trash2 } from "lucide-react";
+import { useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
+import type { z } from "zod";
 import {
   useCreateCredentialMutation,
   useDeleteCredentialMutation,
@@ -10,18 +11,19 @@ import {
   useReorderCredentialsMutation,
   useUpdateCredentialMutation,
 } from "../../api/adminApi";
-import type { Credential } from "../../api/types";
 import { errorMessage } from "../../api/errors";
-import { Card } from "../../components/Card";
+import type { Credential } from "../../api/types";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { FormDialog } from "../../components/FormDialog";
 import { PageHeader } from "../../components/PageHeader";
-import { SortableList } from "../../components/SortableList";
 import { EmptyState, ErrorState, LoadingList } from "../../components/States";
+import { cn } from "../../lib/cn";
 import { credentialSchema } from "../../lib/schemas";
-import type { z } from "zod";
+
+import "../../style/credentials.css";
 
 type Form = z.infer<typeof credentialSchema>;
+type Kind = Form["kind"];
 
 const BLANK: Form = {
   kind: "degree",
@@ -31,12 +33,24 @@ const BLANK: Form = {
   detail: "",
 };
 
+const SECTIONS: { kind: Kind; label: string; empty: string; add: string }[] = [
+  { kind: "degree", label: "Degrees", empty: "No degrees yet.", add: "Add degree" },
+  {
+    kind: "certification",
+    label: "Certifications",
+    empty: "No certifications yet.",
+    add: "Add certification",
+  },
+];
+
 const CredentialDialog = ({
   entry,
+  initialKind,
   onClose,
   onSaved,
 }: {
   entry: Credential | null;
+  initialKind?: Kind;
   onClose: () => void;
   onSaved: () => void;
 }) => {
@@ -52,8 +66,9 @@ const CredentialDialog = ({
           period: entry.period ?? "",
           detail: entry.detail ?? "",
         }
-      : BLANK,
+      : { ...BLANK, kind: initialKind ?? BLANK.kind },
   });
+  const errors = form.formState.errors;
 
   const onSubmit = form.handleSubmit(async (values) => {
     try {
@@ -90,7 +105,7 @@ const CredentialDialog = ({
       onSubmit={() => void onSubmit()}
       busy={createState.isLoading || updateState.isLoading}
     >
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="cr-grid2">
         <div>
           <label className="label" htmlFor="credential-kind">
             Kind
@@ -106,11 +121,12 @@ const CredentialDialog = ({
           </label>
           <input
             id="credential-period"
-            className="field"
+            className={cn("field", errors.period && "is-invalid")}
             maxLength={60}
             placeholder="2019 — 2023"
             {...form.register("period")}
           />
+          {errors.period?.message ? <p className="field-error">{errors.period.message}</p> : null}
         </div>
       </div>
       <div>
@@ -119,10 +135,11 @@ const CredentialDialog = ({
         </label>
         <input
           id="credential-title"
-          className="field"
+          className={cn("field", errors.title && "is-invalid")}
           maxLength={160}
           {...form.register("title")}
         />
+        {errors.title?.message ? <p className="field-error">{errors.title.message}</p> : null}
       </div>
       <div>
         <label className="label" htmlFor="credential-issuer">
@@ -130,10 +147,11 @@ const CredentialDialog = ({
         </label>
         <input
           id="credential-issuer"
-          className="field"
+          className={cn("field", errors.issuer && "is-invalid")}
           maxLength={160}
           {...form.register("issuer")}
         />
+        {errors.issuer?.message ? <p className="field-error">{errors.issuer.message}</p> : null}
       </div>
       <div>
         <label className="label" htmlFor="credential-detail">
@@ -141,10 +159,11 @@ const CredentialDialog = ({
         </label>
         <textarea
           id="credential-detail"
-          className="field min-h-20"
+          className={cn("field min-h-20", errors.detail && "is-invalid")}
           maxLength={200}
           {...form.register("detail")}
         />
+        {errors.detail?.message ? <p className="field-error">{errors.detail.message}</p> : null}
       </div>
     </FormDialog>
   );
@@ -155,8 +174,57 @@ export default function CredentialsPage() {
   const [reorder] = useReorderCredentialsMutation();
   const [remove, removeState] = useDeleteCredentialMutation();
   const [editing, setEditing] = useState<Credential | null>(null);
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState<Kind | null>(null);
   const [deleting, setDeleting] = useState<Credential | null>(null);
+
+  // `local` shows the new order instantly while it saves; the server list replaces it afterwards.
+  const [local, setLocal] = useState<Credential[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [targetId, setTargetId] = useState<string | null>(null);
+  const gripRefs = useRef(new Map<string, HTMLButtonElement>());
+
+  const all = local ?? query.data?.data ?? [];
+  const countOf = (kind: Kind): number => all.filter((entry) => entry.kind === kind).length;
+
+  const commitOrder = async (next: Credential[], focusId?: string): Promise<void> => {
+    setLocal(next);
+    setBusy(true);
+    try {
+      await reorder(next.map((entry) => entry.id)).unwrap();
+    } catch (error) {
+      toast.error(errorMessage(error));
+    } finally {
+      try {
+        await query.refetch();
+      } finally {
+        setLocal(null);
+        setBusy(false);
+        if (focusId) requestAnimationFrame(() => gripRefs.current.get(focusId)?.focus());
+      }
+    }
+  };
+
+  // Reorders inside one kind. The saved order stays a single list: each kind's slots are
+  // refilled in the new order, so the other kind keeps its place.
+  const moveWithin = (kind: Kind, fromId: string, toId: string): void => {
+    const group = all.filter((entry) => entry.kind === kind);
+    const fromIndex = group.findIndex((entry) => entry.id === fromId);
+    const toIndex = group.findIndex((entry) => entry.id === toId);
+    if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return;
+    const reordered = [...group];
+    const [moved] = reordered.splice(fromIndex, 1);
+    if (!moved) return;
+    reordered.splice(toIndex, 0, moved);
+    let cursor = 0;
+    const next = all.map((entry) => (entry.kind === kind ? (reordered[cursor++] as Credential) : entry));
+    void commitOrder(next, fromId);
+  };
+
+  const endDrag = (): void => {
+    setDragId(null);
+    setTargetId(null);
+  };
 
   return (
     <>
@@ -165,7 +233,7 @@ export default function CredentialsPage() {
         title="Credentials"
         description="Education and certifications. Degrees and certifications are grouped on the public site."
         actions={
-          <button type="button" className="btn btn-primary" onClick={() => setCreating(true)}>
+          <button type="button" className="btn btn-primary" onClick={() => setCreating("degree")}>
             <Plus size={15} /> New credential
           </button>
         }
@@ -175,56 +243,140 @@ export default function CredentialsPage() {
         <LoadingList rows={4} />
       ) : query.error ? (
         <ErrorState error={query.error} onRetry={query.refetch} />
-      ) : query.data && query.data.data.length > 0 ? (
-        <Card bodyClassName="p-3">
-          <SortableList
-            items={query.data.data.map((entry) => ({
-              id: entry.id,
-              node: (
-                <div className="flex flex-wrap items-center gap-3">
-                  <span className="font-mono text-[9px] uppercase tracking-wide text-[#f0a500]">
-                    {entry.kind}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium text-white">
-                      {entry.title}
-                    </div>
-                    <div className="truncate font-mono text-[10px] text-[#5f7189]">
-                      {[entry.issuer, entry.period].filter(Boolean).join(" · ") || "—"}
-                    </div>
+      ) : all.length > 0 ? (
+        <>
+          <div className="cr-summary">
+            <span>
+              <b>{countOf("degree")}</b> {countOf("degree") === 1 ? "degree" : "degrees"}
+            </span>
+            <span>
+              <b>{countOf("certification")}</b>{" "}
+              {countOf("certification") === 1 ? "certification" : "certifications"}
+            </span>
+            <span>Drag a row, or focus its handle and use the arrow keys.</span>
+          </div>
+
+          <div className={cn(busy && "cr-busy")} aria-busy={busy}>
+            {SECTIONS.map((section) => {
+              const group = all.filter((entry) => entry.kind === section.kind);
+              return (
+                <section
+                  key={section.kind}
+                  className={cn("cr-section", section.kind === "certification" && "cert")}
+                  aria-label={section.label}
+                >
+                  <div className="cr-sec-head">
+                    <span className="cr-dot" aria-hidden="true" />
+                    <h2>{section.label}</h2>
+                    <small>{group.length}</small>
                   </div>
-                  <button
-                    type="button"
-                    className="rounded-md p-1.5 text-[#7c8fa6] hover:bg-white/5 hover:text-white"
-                    aria-label={`Edit ${entry.title}`}
-                    onClick={() => setEditing(entry)}
-                  >
-                    <Pencil size={15} />
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-md p-1.5 text-[#7c8fa6] hover:bg-red-500/10 hover:text-red-300"
-                    aria-label={`Delete ${entry.title}`}
-                    onClick={() => setDeleting(entry)}
-                  >
-                    <Trash2 size={15} />
-                  </button>
-                </div>
-              ),
-            }))}
-            onReorder={(ids) => {
-              void reorder(ids)
-                .unwrap()
-                .catch((error: unknown) => toast.error(errorMessage(error)));
-            }}
-          />
-        </Card>
+                  <div className="cr-list">
+                    {group.length === 0 ? (
+                      <p className="cr-none">{section.empty}</p>
+                    ) : (
+                      group.map((entry, index) => {
+                        const meta = [entry.issuer, entry.period].filter(Boolean).join(" · ");
+                        return (
+                          <div
+                            key={entry.id}
+                            className={cn(
+                              "cr-row",
+                              dragId === entry.id && "drag",
+                              targetId === entry.id && dragId !== entry.id && "target",
+                            )}
+                            draggable={!busy}
+                            onDragStart={(event) => {
+                              setDragId(entry.id);
+                              event.dataTransfer.effectAllowed = "move";
+                              event.dataTransfer.setData("text/plain", entry.id);
+                            }}
+                            onDragEnd={endDrag}
+                            onDragOver={(event) => {
+                              // Only rows of the same kind accept a drop.
+                              const dragged = all.find((item) => item.id === dragId);
+                              if (!dragged || dragged.kind !== entry.kind) return;
+                              event.preventDefault();
+                              event.dataTransfer.dropEffect = "move";
+                              setTargetId(entry.id);
+                            }}
+                            onDragLeave={(event) => {
+                              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                                setTargetId((current) => (current === entry.id ? null : current));
+                              }
+                            }}
+                            onDrop={(event) => {
+                              event.preventDefault();
+                              const from = dragId;
+                              endDrag();
+                              if (from && from !== entry.id) moveWithin(entry.kind, from, entry.id);
+                            }}
+                          >
+                            <button
+                              type="button"
+                              className="cr-grip"
+                              ref={(node) => {
+                                if (node) gripRefs.current.set(entry.id, node);
+                                else gripRefs.current.delete(entry.id);
+                              }}
+                              aria-label={`Reorder ${entry.title}. Position ${index + 1} of ${group.length}. Use the arrow keys to move.`}
+                              disabled={busy}
+                              onKeyDown={(event) => {
+                                const step =
+                                  event.key === "ArrowUp" || event.key === "ArrowLeft"
+                                    ? -1
+                                    : event.key === "ArrowDown" || event.key === "ArrowRight"
+                                      ? 1
+                                      : 0;
+                                if (step === 0) return;
+                                event.preventDefault();
+                                const neighbour = group[index + step];
+                                if (neighbour) moveWithin(entry.kind, entry.id, neighbour.id);
+                              }}
+                            >
+                              <GripVertical />
+                            </button>
+                            <div className="cr-body">
+                              <div className="cr-title">{entry.title}</div>
+                              <div className="cr-meta">{meta || "—"}</div>
+                              {entry.detail ? <p className="cr-detail">{entry.detail}</p> : null}
+                            </div>
+                            <div className="cr-act">
+                              <button
+                                type="button"
+                                className="ib"
+                                aria-label={`Edit ${entry.title}`}
+                                onClick={() => setEditing(entry)}
+                              >
+                                <Pencil />
+                              </button>
+                              <button
+                                type="button"
+                                className="ib d"
+                                aria-label={`Delete ${entry.title}`}
+                                onClick={() => setDeleting(entry)}
+                              >
+                                <Trash2 />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                    <button type="button" className="cr-add" onClick={() => setCreating(section.kind)}>
+                      <Plus size={15} /> {section.add}
+                    </button>
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+        </>
       ) : (
         <EmptyState
           title="No credentials yet"
           description="Add the degrees and certifications shown in the About section."
           action={
-            <button type="button" className="btn btn-primary" onClick={() => setCreating(true)}>
+            <button type="button" className="btn btn-primary" onClick={() => setCreating("degree")}>
               New credential
             </button>
           }
@@ -234,7 +386,8 @@ export default function CredentialsPage() {
       {creating ? (
         <CredentialDialog
           entry={null}
-          onClose={() => setCreating(false)}
+          initialKind={creating}
+          onClose={() => setCreating(null)}
           onSaved={() => void query.refetch()}
         />
       ) : null}
