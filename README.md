@@ -585,8 +585,8 @@ The cookie session drives the topology. There are two working shapes:
 - Backend: `FRONTEND_ORIGIN_CLIENT=https://www.example.com`,
   `FRONTEND_ORIGIN_ADMIN=https://admin.example.com`,
   `COOKIE_DOMAIN=.example.com`, `COOKIE_SAMESITE=lax`, `TRUST_PROXY=1`.
-- Admin: `VITE_API_URL=https://api.example.com`; add that origin to the CSP
-  `connect-src`.
+- Admin: `VITE_API_URL=https://api.example.com`; the build-time CSP picks that
+  origin up automatically (`connect-src`), so do not edit a CSP by hand.
 - WebSockets connect directly to the API.
 
 ### Option B — same-origin proxy (no custom domain)
@@ -595,7 +595,8 @@ The admin host rewrites `/api/*` and `/socket.io/*` to the backend and
 `VITE_API_URL` stays empty. Cookies are host-only and first-party. Static hosts
 cannot proxy WebSocket upgrades, so Socket.IO falls back to polling and the
 console shows `Degraded`; inbox and chat still work with a few seconds of
-latency. Keep the CSP `connect-src 'self'`.
+latency. The generated CSP is `connect-src 'self'` because `VITE_API_URL` is
+empty; it is built from that variable, never hand-edited.
 
 > Two separate `*.vercel.app` projects are **different sites** (`vercel.app` is a
 > public suffix), so the session cookie becomes third-party and browsers that

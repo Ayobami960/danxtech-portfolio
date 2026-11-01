@@ -16,6 +16,9 @@ export type ApiError = {
  */
 export const FRIENDLY = {
   offline: "You appear to be offline. Check your connection and try again.",
+  /** Online, but the request never reached the API (CSP, CORS or DNS). */
+  blocked:
+    "Your browser could not reach the API. If your connection is fine, a Content-Security-Policy or CORS setting is probably blocking this origin.",
   unavailable: "The service is temporarily unavailable. Please try again shortly.",
   server: "Something went wrong on our side. Please try again.",
   session: "Your session has expired. Please sign in again.",
@@ -99,6 +102,17 @@ const firstFieldMessage = (
   return undefined;
 };
 
+/**
+ * `fetch` rejects identically for an offline browser, a blocked origin and an
+ * unreachable host. The browser's online flag is the only signal available, so
+ * an online failure is labelled as blocked (CSP/CORS) rather than offline.
+ */
+export const networkFailure = (online: boolean): ApiError => ({
+  status: "FETCH_ERROR",
+  code: online ? "NETWORK_BLOCKED" : "NETWORK",
+  message: online ? FRIENDLY.blocked : FRIENDLY.offline,
+});
+
 const defaultCode = (status: ApiErrorStatus): string => {
   if (status === "FETCH_ERROR") return "NETWORK";
   if (status === "TIMEOUT") return "TIMEOUT";
@@ -117,6 +131,7 @@ const friendlyMessage = (
   code: string,
   fieldErrors?: Record<string, string>,
 ): string => {
+  if (code === "NETWORK_BLOCKED") return FRIENDLY.blocked;
   if (status === "FETCH_ERROR" || code === "NETWORK" || code === "OFFLINE") {
     return FRIENDLY.offline;
   }
@@ -234,17 +249,20 @@ export const errorDetails = (
   const status = api?.status;
   const code = api?.code ?? "";
 
-  const offline = status === "FETCH_ERROR" || code === "NETWORK";
+  const blocked = code === "NETWORK_BLOCKED";
+  const offline = !blocked && (status === "FETCH_ERROR" || code === "NETWORK");
   const unavailable = status === 503 || code === "SERVICE_UNAVAILABLE";
   const serverError = typeof status === "number" && status >= 500;
 
-  const title = offline
-    ? "You're offline"
-    : unavailable
-      ? "Service temporarily unavailable"
-      : serverError
-        ? "Something went wrong on our side"
-        : "Could not load this view";
+  const title = blocked
+    ? "Can't reach the API"
+    : offline
+      ? "You're offline"
+      : unavailable
+        ? "Service temporarily unavailable"
+        : serverError
+          ? "Something went wrong on our side"
+          : "Could not load this view";
 
   const message = api
     ? friendlyMessage(api.status, api.code, api.fieldErrors)

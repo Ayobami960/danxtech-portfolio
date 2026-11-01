@@ -38,6 +38,10 @@ const SessionChannel = () => {
 export const App = () => {
   const dispatch = useAppDispatch();
   const status = useAppSelector((state) => state.auth.status);
+  // The real failure (blocked fetch, 503, timeout) — never a hardcoded 503, so
+  // the panel cannot claim the service is down when the request never left
+  // the browser.
+  const sessionError = useAppSelector((state) => state.auth.error);
 
   useEffect(() => {
     void dispatch(bootstrapSession());
@@ -61,7 +65,13 @@ export const App = () => {
       <main className="glow-blue flex min-h-screen items-center justify-center px-4">
         <div className="w-full max-w-lg">
           <ErrorState
-            error={{ status: 503, code: "SERVICE_UNAVAILABLE", message: "" }}
+            error={
+              sessionError ?? {
+                status: 503,
+                code: "SERVICE_UNAVAILABLE",
+                message: "",
+              }
+            }
             onRetry={() => void dispatch(bootstrapSession())}
           />
           <p className="mt-4 text-center text-xs text-[#7c8fa6]">

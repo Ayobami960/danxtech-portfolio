@@ -6,6 +6,7 @@ import {
   FRIENDLY,
   getFieldErrors,
   isTransientError,
+  networkFailure,
   normalizeError,
 } from "../src/api/errors.ts";
 
@@ -121,6 +122,29 @@ describe("errorDetails", () => {
       ).title,
       "Something went wrong on our side",
     );
+  });
+});
+
+describe("networkFailure", () => {
+  it("labels a blocked request distinctly from being offline", () => {
+    const blocked = networkFailure(true);
+    assert.equal(blocked.code, "NETWORK_BLOCKED");
+    assert.equal(errorMessage(blocked), FRIENDLY.blocked);
+
+    const details = errorDetails(blocked);
+    assert.equal(details.title, "Can't reach the API");
+    assert.notEqual(details.message, FRIENDLY.unavailable);
+  });
+
+  it("keeps the offline copy when the browser reports offline", () => {
+    const offline = networkFailure(false);
+    assert.equal(offline.code, "NETWORK");
+    assert.equal(errorDetails(offline).title, "You're offline");
+  });
+
+  it("never signs the admin out on a blocked request", () => {
+    assert.equal(isTransientError(networkFailure(true)), true);
+    assert.equal(isTransientError(networkFailure(false)), true);
   });
 });
 

@@ -9,6 +9,7 @@ import cors from "cors";
 import helmetImport from "helmet";
 import { API_PREFIX } from "./config/constants.js";
 import { env } from "./config/env.js";
+import { logger } from "./config/logger.js";
 import {
   contentVersionHandler,
   streamContentEvents,
@@ -40,7 +41,18 @@ const corsOrigin = (
     callback(null, true);
     return;
   }
-  callback(null, env.frontendOrigins.includes(origin));
+
+  const allowed = env.frontendOrigins.includes(origin);
+  if (!allowed) {
+    // Visible in Vercel Logs: nearly every "the API is down" report from the
+    // admin is actually this line, because a rejected origin produces a
+    // browser-side fetch failure with no response and no server error.
+    logger.warn(
+      { origin, allowed: env.frontendOrigins },
+      "Blocked cross-origin request (origin missing from FRONTEND_ORIGIN_*)",
+    );
+  }
+  callback(null, allowed);
 };
 
 const DOCUMENT_UPLOAD_PATH = `${API_PREFIX}/admin/documents`;

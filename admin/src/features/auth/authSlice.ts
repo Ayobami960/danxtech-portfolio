@@ -1,4 +1,5 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
+import type { ApiError } from "../../api/errors";
 import type { AdminUser } from "../../api/types";
 
 export type AuthStatus =
@@ -15,6 +16,8 @@ export type AuthState = {
   /** Memory only — never persisted, never placed in storage. */
   csrfToken: string | null;
   sessionExpiredAt: number | null;
+  /** The real reason the last session probe failed, for the error panel. */
+  error: ApiError | null;
 };
 
 const initialState: AuthState = {
@@ -22,6 +25,7 @@ const initialState: AuthState = {
   user: null,
   csrfToken: null,
   sessionExpiredAt: null,
+  error: null,
 };
 
 const authSlice = createSlice({
@@ -35,26 +39,30 @@ const authSlice = createSlice({
       state.status = "authenticated";
       state.user = action.payload;
       state.sessionExpiredAt = null;
+      state.error = null;
     },
     setAnonymous(state) {
       state.status = "anonymous";
       state.user = null;
       state.sessionExpiredAt = null;
+      state.error = null;
     },
     setAwaitingTwoFactor(state) {
       state.status = "awaiting2fa";
       state.user = null;
     },
-    setSessionUnavailable(state) {
+    setSessionUnavailable(state, action: PayloadAction<ApiError>) {
       // A 503/network failure must never look like a sign-out: keep the user
       // and the CSRF token so a retry can succeed.
       state.status = "unavailable";
+      state.error = action.payload;
     },
     sessionExpired(state) {
       state.status = "anonymous";
       state.user = null;
       state.csrfToken = null;
       state.sessionExpiredAt = Date.now();
+      state.error = null;
     },
     loggedOut(state) {
       state.status = "anonymous";

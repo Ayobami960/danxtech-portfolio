@@ -48,7 +48,7 @@ export const bootstrapSession = createAsyncThunk<
   // A database outage or dropped connection is not a sign-out. Surface a
   // retryable error screen instead of sending the admin to the login form.
   if (isTransientError(result.error)) {
-    dispatch(setSessionUnavailable());
+    dispatch(setSessionUnavailable(result.error));
     return null;
   }
 

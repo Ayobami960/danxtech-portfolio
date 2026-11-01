@@ -1,5 +1,5 @@
 import { API_BASE } from "../utils/config";
-import { normalizeError, type ApiError } from "./errors";
+import { networkFailure, normalizeError, type ApiError } from "./errors";
 
 export type ApiResult<T> =
   | { ok: true; data: T; status: number }
@@ -80,7 +80,26 @@ export const apiRequest = async <T>(
           },
         };
       }
-      return { ok: false, error: normalizeError("FETCH_ERROR", null) };
+
+      // No response was received: offline, CSP-blocked, CORS-blocked or the
+      // host is down. The throw is the only diagnostic the browser gives us,
+      // so log it verbatim; the UI keeps showing friendly copy.
+      const online = typeof navigator === "undefined" || navigator.onLine !== false;
+      console.error(
+        `[api] ${options.method ?? "GET"} ${API_BASE}${path} failed before a response was received`,
+        {
+          error,
+          apiBase: API_BASE,
+          pageOrigin:
+            typeof window === "undefined" ? "n/a" : window.location.origin,
+          browserOnline: online,
+          hint: online
+            ? "Usually a Content-Security-Policy connect-src or CORS allowlist rejection. Compare the CSP meta tag's connect-src with this API base."
+            : "The browser reports it is offline.",
+        },
+      );
+
+      return { ok: false, error: networkFailure(online) };
     }
   };
 
@@ -117,7 +136,16 @@ export const refreshSession = async (
     method: "POST",
     credentials: "include",
     headers: { accept: "application/json", "x-csrf-token": token },
+  }).catch((error: unknown) => {
+    // A blocked refresh is not a sign-out; report it and let the caller keep
+    // the existing session state.
+    console.error("[api] POST /auth/refresh failed before a response was received", {
+      error,
+      apiBase: API_BASE,
+    });
+    return null;
   });
+  if (attempt === null) return { ok: false, csrfToken: token };
 
   if (attempt.status === 403) {
     token = await fetchCsrfToken();
