@@ -7,7 +7,7 @@ import {
   useUpdateResumeMutation,
 } from "../../api/adminApi";
 import { errorMessage } from "../../api/errors";
-import { API_ORIGIN } from "../../utils/config";
+import { API_BASE } from "../../utils/config";
 import { Card } from "../../components/Card";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { PageHeader } from "../../components/PageHeader";
@@ -30,8 +30,8 @@ export default function ResumePage() {
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   const info = query.data && query.data.available ? query.data : null;
-  const downloadUrl = `${API_ORIGIN}/api/v1/resume/download`;
-  const previewUrl = `${API_ORIGIN}/api/v1/resume/download?inline=1`;
+  const downloadUrl = `${API_BASE}/resume/download`;
+  const previewUrl = `${API_BASE}/resume/download?inline=1`;
 
   const onFiles = (files: File[]): void => {
     const file = files[0];

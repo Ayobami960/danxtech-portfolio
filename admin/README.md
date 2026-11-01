@@ -23,15 +23,25 @@ cd backend && npm run admin:create
 
 ## Environment
 
-- `VITE_API_URL` — backend origin (e.g. `https://api.example.com`), or **empty**
-  to use the host proxy.
-- `VITE_CLIENT_URL` — public site URL for "View site" and previews.
+- `VITE_CLIENT_URL` — public site URL for "View site" and previews. The API is
+  always reached through the relative `/api/v1` path, so there is no API URL to
+  configure (and none is baked into the bundle).
+- Removing `VITE_API_URL` from the environment is safe: it is no longer read.
+  If it is still set in Vercel, the build ignores it.
+
+### Session bootstrap
+
+`has_session=1` is a readable (non-HttpOnly) cookie set by the API after a full
+login and cleared on logout/password change/refresh failure. It carries no
+authority; it only lets the SPA skip `/auth/me` and `/auth/refresh` when nobody
+is signed in, so a logged-out load makes no API requests at all. A pending 2FA
+challenge never sets it.
 
 ## Hosting topology
 
-**Option B — same-origin proxy.** The Admin host proxies `/api` and
-`/socket.io` to the backend (the `vercel.json` rewrites, the Vite dev proxy
-locally) and `VITE_API_URL` is empty, so every request is same-origin:
+**Same-origin proxy (the only supported shape now).** The Admin host proxies
+`/api` and `/socket.io` to the backend (`vercel.json` rewrites in production,
+the Vite dev proxy locally), so every request is same-origin:
 the session cookie is first-party on the Admin domain, no CORS preflight is
 involved, and `SameSite=None` is not needed for the Admin. WebSocket upgrades
 are not proxied, so the realtime layer uses Socket.IO polling and the

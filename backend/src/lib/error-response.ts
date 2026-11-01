@@ -15,6 +15,8 @@ export const SAFE_MESSAGES: Record<ErrorCode, string> = {
   PAYLOAD_TOO_LARGE: "That request is too large.",
   UNSUPPORTED_MEDIA_TYPE: "That file type is not supported.",
   CSRF_INVALID: "Your session could not be verified. Please try again.",
+  TWO_FACTOR_CHALLENGE_INVALID:
+    "This sign-in challenge has expired. Sign in again.",
   INTERNAL_ERROR: "Something went wrong. Please try again.",
   SERVICE_UNAVAILABLE:
     "The service is temporarily unavailable. Please try again.",
@@ -194,6 +196,7 @@ export const classifyError = (error: unknown): ClassifiedError => {
       code === "UNAUTHORIZED" ||
       code === "FORBIDDEN" ||
       code === "CSRF_INVALID" ||
+      code === "TWO_FACTOR_CHALLENGE_INVALID" ||
       code === "NOT_FOUND" ||
       code === "INVITE_INVALID"
     ) {

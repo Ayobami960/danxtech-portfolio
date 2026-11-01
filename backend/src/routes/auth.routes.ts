@@ -1,5 +1,6 @@
 import { Router } from "express";
 import {
+  cancelTwoFactorLogin,
   changePassword,
   getCsrf,
   login,
@@ -43,6 +44,10 @@ authRouter.post(
   validate({ body: twoFactorVerifySchema }),
   verifyTwoFactor,
 );
+
+// Abandon a pending challenge. Idempotent, CSRF-protected, and never able to
+// create or clear a real session.
+authRouter.post("/2fa/cancel", authLimiter(), requireCsrf, cancelTwoFactorLogin);
 
 authRouter.post("/refresh", authLimiter(), requireCsrf, refresh);
 authRouter.post("/logout", authLimiter(), requireCsrf, logout);

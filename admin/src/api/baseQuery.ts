@@ -13,6 +13,7 @@ import {
   sessionExpired,
 } from "../features/auth/authSlice";
 import { fetchCsrfToken, refreshSession } from "./client";
+import { hasSessionHint } from "../utils/sessionHint";
 
 const mutex = new Mutex();
 let lastRefreshedAt = 0;
@@ -58,8 +59,7 @@ const refreshOnce = async (api: Api): Promise<boolean> => {
   try {
     if (Date.now() - lastRefreshedAt < 2_000) return true;
 
-    const state = api.getState() as RootState;
-    const result = await refreshSession(state.auth.csrfToken);
+    const result = await refreshSession();
     if (result.csrfToken) api.dispatch(setCsrfToken(result.csrfToken));
     if (result.ok) {
       lastRefreshedAt = Date.now();
@@ -112,6 +112,14 @@ export const baseQueryWithReauth: BaseQueryFn<
   }
 
   if (error.status === 401) {
+    // No hint means nobody has fully signed in in this browser: a refresh would
+    // only produce another expected 401, so go straight to the signed-out
+    // state. A failed refresh clears the hint itself and is never retried.
+    if (!hasSessionHint()) {
+      api.dispatch(sessionExpired());
+      return { error };
+    }
+
     const refreshed = await refreshOnce(api);
     if (refreshed) {
       result = await rawBaseQuery(args, api, extraOptions);

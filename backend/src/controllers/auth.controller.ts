@@ -4,10 +4,12 @@ import { asyncHandler } from "../lib/async-handler.js";
 import {
   clearAuthCookies,
   clearCsrfCookie,
+  clearSessionHintCookie,
   clearTwoFactorCookie,
   readCookie,
   setAuthCookies,
   setCsrfCookie,
+  setSessionHintCookie,
   setTwoFactorCookie,
 } from "../lib/cookies.js";
 import { createCsrfToken } from "../lib/csrf.js";
@@ -35,12 +37,15 @@ export const login = asyncHandler(async (request, response) => {
   setCsrfCookie(response, csrfToken);
 
   if (result.requires2fa) {
+    // Half-authenticated: no session hint and no tokens until the code passes.
+    clearSessionHintCookie(response);
     setTwoFactorCookie(response, result.challengeToken);
     response.status(200).json({ requires2fa: true, csrfToken });
     return;
   }
 
   setAuthCookies(response, result.accessToken, result.refreshToken);
+  setSessionHintCookie(response);
   response.status(200).json({ admin: result.admin, csrfToken });
 });
 
@@ -54,9 +59,21 @@ export const verifyTwoFactor = asyncHandler(async (request, response) => {
 
   clearTwoFactorCookie(response);
   setAuthCookies(response, result.accessToken, result.refreshToken);
+  // Only now is this a real session.
+  setSessionHintCookie(response);
   const csrfToken = createCsrfToken();
   setCsrfCookie(response, csrfToken);
   response.status(200).json({ admin: result.admin, csrfToken });
+});
+
+/**
+ * POST /auth/2fa/cancel — abandon a pending challenge. Always 204, even with
+ * nothing pending, and never touches an authenticated session.
+ */
+export const cancelTwoFactorLogin = asyncHandler(async (request, response) => {
+  await authService.cancelTwoFactor(readCookie(request, TWO_FACTOR_COOKIE));
+  clearTwoFactorCookie(response);
+  response.status(204).end();
 });
 
 export const refresh = asyncHandler(async (request, response) => {
@@ -68,15 +85,19 @@ export const refresh = asyncHandler(async (request, response) => {
   } catch (error) {
     // A dead session must not keep a stale cookie alive on the client.
     clearAuthCookies(response);
+    clearSessionHintCookie(response);
     throw error;
   }
 });
 
 export const logout = asyncHandler(async (request, response) => {
+  // A pending challenge dies with the session too.
+  await authService.cancelTwoFactor(readCookie(request, TWO_FACTOR_COOKIE));
   await authService.logout(request, readCookie(request, REFRESH_COOKIE));
   clearAuthCookies(response);
   clearTwoFactorCookie(response);
   clearCsrfCookie(response);
+  clearSessionHintCookie(response);
   response.status(204).end();
 });
 
@@ -96,5 +117,7 @@ export const changePassword = asyncHandler(async (request, response) => {
   // Every session was revoked; the caller has to sign in again.
   clearAuthCookies(response);
   clearCsrfCookie(response);
+  clearTwoFactorCookie(response);
+  clearSessionHintCookie(response);
   response.status(200).json({ ok: true, sessionsRevoked: true });
 });

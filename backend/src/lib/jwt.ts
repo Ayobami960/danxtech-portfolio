@@ -5,7 +5,7 @@ import {
   GUEST_TOKEN_TTL_SECONDS,
   TWO_FACTOR_CHALLENGE_TTL_SECONDS,
 } from "../config/constants.js";
-import { unauthorized } from "./errors.js";
+import { AppError, ERROR_CODES, unauthorized } from "./errors.js";
 
 const accessKey = new TextEncoder().encode(env.jwtAccessSecret);
 
@@ -26,10 +26,24 @@ export const signAccessToken = async (
 
 /* --------------------------- 2FA login challenge --------------------------- */
 
-export const signTwoFactorChallenge = async (adminId: string): Promise<string> =>
+/**
+ * The cookie is only a signed pointer to a server-side challenge row (`jti`),
+ * so the challenge can be revoked on demand — cancel, logout, a new password
+ * login or too many bad codes — instead of merely ageing out.
+ */
+export type TwoFactorChallengePayload = {
+  adminId: string;
+  challengeId: string;
+};
+
+export const signTwoFactorChallenge = async (
+  adminId: string,
+  challengeId: string,
+): Promise<string> =>
   new SignJWT({ type: "2fa" })
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setSubject(adminId)
+    .setJti(challengeId)
     .setAudience("admin-2fa")
     .setIssuedAt()
     .setExpirationTime(`${TWO_FACTOR_CHALLENGE_TTL_SECONDS}s`)
@@ -37,18 +51,28 @@ export const signTwoFactorChallenge = async (adminId: string): Promise<string> =
 
 export const verifyTwoFactorChallenge = async (
   token: string,
-): Promise<string> => {
+): Promise<TwoFactorChallengePayload> => {
   try {
     const { payload } = await jwtVerify(token, accessKey, {
       algorithms: ["HS256"],
       audience: "admin-2fa",
     });
-    if (payload.type !== "2fa" || typeof payload.sub !== "string") {
+    if (
+      payload.type !== "2fa" ||
+      typeof payload.sub !== "string" ||
+      typeof payload.jti !== "string"
+    ) {
       throw new Error("Unexpected challenge payload.");
     }
-    return payload.sub;
+    return { adminId: payload.sub, challengeId: payload.jti };
   } catch {
-    throw unauthorized("The verification window expired. Please sign in again.");
+    // Distinct from "invalid code": the client returns to the password step
+    // instead of suggesting the code was wrong.
+    throw new AppError(
+      401,
+      ERROR_CODES.TWO_FACTOR_CHALLENGE_INVALID,
+      "This sign-in challenge has expired. Sign in again.",
+    );
   }
 };
 

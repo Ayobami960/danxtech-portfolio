@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
-  readonly VITE_API_URL?: string;
+  /** Public site origin, used only for "View site" links. */
   readonly VITE_CLIENT_URL?: string;
 }
 

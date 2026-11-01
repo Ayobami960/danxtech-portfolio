@@ -14,6 +14,8 @@ import {
 import {
   REFRESH_TOKEN_TTL_SECONDS,
   REFRESH_FAMILY_REVOKE_REASON,
+  TWO_FACTOR_CHALLENGE_TTL_SECONDS,
+  TWO_FACTOR_MAX_ATTEMPTS,
 } from "../config/constants.js";
 import type { AdminUser } from "../database/schema.js";
 import {
@@ -30,6 +32,13 @@ import {
   revokeRefreshFamily,
   revokeRefreshToken,
 } from "../repositories/refresh-token.repository.js";
+import {
+  consumeTwoFactorChallenge,
+  createTwoFactorChallenge,
+  deleteTwoFactorChallengesForUser,
+  findTwoFactorChallenge,
+  recordTwoFactorFailure,
+} from "../repositories/two-factor-challenge.repository.js";
 import { audit } from "../repositories/audit-writer.js";
 import {
   hashPassword,
@@ -52,6 +61,18 @@ const LOCK_DURATION_MS = 15 * 60 * 1000;
  * the "wrong password" path, so response timing does not reveal accounts.
  */
 const dummyHash = hashPassword(randomToken(16));
+
+/**
+ * Any request that has no live, unexpired, unused pending challenge gets this.
+ * It is a 401 with its own code so the UI can send the user back to the
+ * password step instead of calling a valid code "invalid".
+ */
+const challengeInvalid = () =>
+  new AppError(
+    401,
+    ERROR_CODES.TWO_FACTOR_CHALLENGE_INVALID,
+    "This sign-in challenge has expired. Sign in again.",
+  );
 
 export type AuthResult = {
   admin: SafeAdmin;
@@ -150,9 +171,19 @@ export const login = async (
       entityId: admin.id,
       userId: admin.id,
     });
+    // A new password login invalidates every older pending challenge for this
+    // account, so only the newest one can ever be verified.
+    await deleteTwoFactorChallengesForUser(admin.id);
+    const challenge = await createTwoFactorChallenge({
+      userId: admin.id,
+      expiresAt: new Date(
+        Date.now() + TWO_FACTOR_CHALLENGE_TTL_SECONDS * 1000,
+      ),
+    });
+
     return {
       requires2fa: true,
-      challengeToken: await signTwoFactorChallenge(admin.id),
+      challengeToken: await signTwoFactorChallenge(admin.id, challenge.id),
     };
   }
 
@@ -173,13 +204,29 @@ export const completeTwoFactorLogin = async (
   challengeToken: string | undefined,
   code: string,
 ): Promise<AuthResult> => {
-  if (!challengeToken) {
-    throw unauthorized("Your sign-in challenge expired. Please sign in again.");
+  if (!challengeToken) throw challengeInvalid();
+
+  const { adminId, challengeId } =
+    await verifyTwoFactorChallenge(challengeToken);
+
+  // The challenge must still exist server-side: this is what makes cancel,
+  // logout, a new password login and single-use verification effective.
+  const challenge = await findTwoFactorChallenge(challengeId);
+  if (
+    !challenge ||
+    challenge.userId !== adminId ||
+    challenge.consumedAt !== null ||
+    challenge.expiresAt.getTime() <= Date.now() ||
+    challenge.failedAttempts >= TWO_FACTOR_MAX_ATTEMPTS
+  ) {
+    throw challengeInvalid();
   }
 
-  const adminId = await verifyTwoFactorChallenge(challengeToken);
   const admin = await findAdminById(adminId);
-  if (!admin) throw unauthorized(INVALID_CREDENTIALS);
+  if (!admin) {
+    await consumeTwoFactorChallenge(challengeId);
+    throw unauthorized(INVALID_CREDENTIALS);
+  }
 
   if (admin.lockedUntil && admin.lockedUntil.getTime() > Date.now()) {
     throw new AppError(429, ERROR_CODES.RATE_LIMITED, LOCKED_MESSAGE);
@@ -190,6 +237,15 @@ export const completeTwoFactorLogin = async (
   } catch (error) {
     const attempts = admin.failedAttempts + 1;
     const shouldLock = attempts >= MAX_FAILED_ATTEMPTS;
+
+    const challengeAttempts = challenge.failedAttempts + 1;
+    await recordTwoFactorFailure(challengeId, challengeAttempts);
+    // Too many wrong codes retires this challenge: the password has to be
+    // entered again before another code can be tried.
+    if (challengeAttempts >= TWO_FACTOR_MAX_ATTEMPTS) {
+      await consumeTwoFactorChallenge(challengeId);
+    }
+
     await recordFailedLogin(
       admin.id,
       attempts,
@@ -200,7 +256,7 @@ export const completeTwoFactorLogin = async (
       entity: "admin",
       entityId: admin.id,
       userId: admin.id,
-      meta: { reason: "invalid_2fa", attempts },
+      meta: { reason: "invalid_2fa", attempts, challengeAttempts },
     });
     if (shouldLock) {
       void sendSecurityNotice("Admin account locked", [
@@ -210,6 +266,8 @@ export const completeTwoFactorLogin = async (
     throw error;
   }
 
+  // Single use: the same challenge cannot verify a second code.
+  await consumeTwoFactorChallenge(challengeId);
   await recordSuccessfulLogin(admin.id);
   const result = await issueSession(request, admin);
   await audit(request, {
@@ -220,6 +278,23 @@ export const completeTwoFactorLogin = async (
     meta: { secondFactor: true },
   });
   return result;
+};
+
+/**
+ * Abandon a pending challenge ("Back to sign in", page unload, logout).
+ * Idempotent, never creates or clears a real session.
+ */
+export const cancelTwoFactor = async (
+  challengeToken: string | undefined,
+): Promise<void> => {
+  if (!challengeToken) return;
+  try {
+    const { challengeId } =
+      await verifyTwoFactorChallenge(challengeToken);
+    await consumeTwoFactorChallenge(challengeId);
+  } catch {
+    // Expired, forged or already consumed: nothing left to cancel.
+  }
 };
 
 const revokeFamilyForReuse = async (

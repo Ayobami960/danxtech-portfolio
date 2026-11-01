@@ -6,11 +6,18 @@ export const ACCESS_COOKIE = "portfolio_access";
 export const REFRESH_COOKIE = "portfolio_refresh";
 export const CSRF_COOKIE = "portfolio_csrf";
 export const TWO_FACTOR_COOKIE = "portfolio_2fa";
+/**
+ * Readable, non-authoritative marker set only after a FULL login. The admin app
+ * uses it to skip `/auth/me` + `/auth/refresh` when nobody is signed in.
+ */
+export const SESSION_HINT_COOKIE = "has_session";
 
 export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 export const REFRESH_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;
 export const CSRF_TOKEN_TTL_SECONDS = 2 * 60 * 60;
 export const TWO_FACTOR_CHALLENGE_TTL_SECONDS = 5 * 60;
+/** Wrong codes allowed per challenge; after this, sign in with the password. */
+export const TWO_FACTOR_MAX_ATTEMPTS = 5;
 export const GUEST_TOKEN_TTL_SECONDS = 24 * 60 * 60;
 export const INVITE_TTL_DAYS = 7;
 export const RECOVERY_CODE_COUNT = 10;

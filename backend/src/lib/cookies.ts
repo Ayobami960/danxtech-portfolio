@@ -9,6 +9,7 @@ import {
   GUEST_TOKEN_TTL_SECONDS,
   REFRESH_COOKIE,
   REFRESH_TOKEN_TTL_SECONDS,
+  SESSION_HINT_COOKIE,
   TWO_FACTOR_CHALLENGE_TTL_SECONDS,
   TWO_FACTOR_COOKIE,
 } from "../config/constants.js";
@@ -50,6 +51,26 @@ export const setAuthCookies = (
 export const clearAuthCookies = (response: Response): void => {
   response.clearCookie(ACCESS_COOKIE, { ...baseCookie(), httpOnly: true });
   response.clearCookie(REFRESH_COOKIE, { ...baseCookie(), httpOnly: true });
+};
+
+/**
+ * `has_session` is readable by JavaScript on purpose: it carries no authority
+ * and only tells the SPA that a real session exists. Set it on full login only
+ * (never for a pending 2FA challenge) and clear it whenever the session dies.
+ */
+export const setSessionHintCookie = (response: Response): void => {
+  response.cookie(SESSION_HINT_COOKIE, "1", {
+    ...baseCookie(),
+    httpOnly: false,
+    maxAge: REFRESH_TOKEN_TTL_SECONDS * 1000,
+  });
+};
+
+export const clearSessionHintCookie = (response: Response): void => {
+  response.clearCookie(SESSION_HINT_COOKIE, {
+    ...baseCookie(),
+    httpOnly: false,
+  });
 };
 
 export const setTwoFactorCookie = (

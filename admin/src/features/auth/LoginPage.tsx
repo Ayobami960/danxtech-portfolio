@@ -5,7 +5,7 @@ import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { z } from "zod";
 import { errorMessage, isApiError } from "../../api/errors";
 import { useAppDispatch, useAppSelector } from "../../store/hooks";
-import { login, verifyTwoFactor } from "./thunks";
+import { cancelTwoFactor, login, verifyTwoFactor } from "./thunks";
 
 const loginSchema = z.object({
   email: z.email("Enter a valid email."),
@@ -22,6 +22,23 @@ type CodeForm = z.infer<typeof codeSchema>;
 
 const safeNext = (value: string | null): string =>
   value && value.startsWith("/") && !value.startsWith("//") ? value : "/";
+
+/** Mirrors TWO_FACTOR_CHALLENGE_TTL_SECONDS on the API. */
+const TWO_FACTOR_WINDOW_MS = 5 * 60 * 1000;
+
+/**
+ * React StrictMode mounts, unmounts and remounts every effect in development.
+ * Cancelling the challenge on that synthetic unmount would break the code step,
+ * so the cancel is deferred by a task; a real remount clears it first.
+ */
+let pendingUnmountCancel: ReturnType<typeof setTimeout> | null = null;
+
+const clearScheduledCancel = (): void => {
+  if (pendingUnmountCancel) {
+    clearTimeout(pendingUnmountCancel);
+    pendingUnmountCancel = null;
+  }
+};
 
 export default function LoginPage() {
   const dispatch = useAppDispatch();
@@ -45,6 +62,59 @@ export default function LoginPage() {
   useEffect(() => {
     if (status === "authenticated") navigate(next, { replace: true });
   }, [status, navigate, next]);
+
+  useEffect(() => {
+    clearScheduledCancel();
+    return clearScheduledCancel;
+  }, []);
+
+  /**
+   * Return to the password step and abandon the challenge. The password is
+   * cleared so a fresh email + password login is required; the email is kept
+   * for convenience.
+   */
+  const backToPassword = (message: string | null): void => {
+    setStep("password");
+    setError(message);
+    setShowPassword(false);
+    codeForm.reset();
+    passwordForm.resetField("password");
+    // Fire-and-forget: the server call is idempotent and the UI must not wait.
+    void dispatch(cancelTwoFactor());
+  };
+
+  // A pending challenge must not outlive the page: cancel on reload/close with
+  // a keepalive request (the CSRF header is still attached by apiRequest).
+  useEffect(() => {
+    if (step !== "code") return;
+    const onPageHide = (): void => {
+      void dispatch(cancelTwoFactor({ keepalive: true }));
+    };
+    window.addEventListener("pagehide", onPageHide);
+    return () => window.removeEventListener("pagehide", onPageHide);
+  }, [step, dispatch]);
+
+  // Leaving the code step some other way (navigation/unmount) also cancels.
+  useEffect(() => {
+    if (step !== "code") return;
+    return () => {
+      pendingUnmountCancel = setTimeout(() => {
+        pendingUnmountCancel = null;
+        void dispatch(cancelTwoFactor());
+      }, 0);
+    };
+  }, [step, dispatch]);
+
+  // The challenge is short-lived; expire the step locally too so the user gets
+  // an explanation instead of a surprise 401.
+  useEffect(() => {
+    if (step !== "code") return;
+    const timer = setTimeout(() => {
+      backToPassword("Session expired, sign in again.");
+    }, TWO_FACTOR_WINDOW_MS);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
 
   if (status === "authenticated") return <Navigate to={next} replace />;
 
@@ -76,7 +146,14 @@ export default function LoginPage() {
       await dispatch(verifyTwoFactor(values)).unwrap();
       navigate(next, { replace: true });
     } catch (thrown) {
-      if (isApiError(thrown) && thrown.status === 429) {
+      if (
+        isApiError(thrown) &&
+        thrown.code === "TWO_FACTOR_CHALLENGE_INVALID"
+      ) {
+        // Cancelled, consumed or expired: no code can be verified until the
+        // password is submitted again.
+        backToPassword("Session expired, sign in again.");
+      } else if (isApiError(thrown) && thrown.status === 429) {
         setError("Too many attempts, try again later.");
       } else if (isApiError(thrown) && thrown.status === 401) {
         setError("Invalid code.");
@@ -202,11 +279,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 className="btn btn-ghost w-full"
-                onClick={() => {
-                  setStep("password");
-                  setError(null);
-                  setShowPassword(false);
-                }}
+                onClick={() => backToPassword(null)}
               >
                 Back to sign in
               </button>

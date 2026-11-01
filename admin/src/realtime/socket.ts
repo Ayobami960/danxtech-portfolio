@@ -1,5 +1,5 @@
 import { io, type Socket } from "socket.io-client";
-import { API_ORIGIN, SOCKET_ORIGIN } from "../utils/config";
+import { SOCKET_ORIGIN } from "../utils/config";
 
 export type ConnectionStatus =
   | "offline"
@@ -75,9 +75,10 @@ export const connectRealtime = (): void => {
     reconnectionAttempts: 8,
     reconnectionDelay: 800,
     reconnectionDelayMax: 5_000,
-    // Static hosts cannot proxy WebSockets, so a same-origin deployment uses
-    // long-polling and falls back to REST polling if that also fails.
-    transports: API_ORIGIN ? ["websocket", "polling"] : ["polling"],
+    // Same-origin. The dev proxy forwards WebSocket upgrades; a static host's
+    // rewrite does not, so production starts on long-polling and falls back to
+    // REST polling if that also fails.
+    transports: import.meta.env.DEV ? ["websocket", "polling"] : ["polling"],
   });
   socket = next;
 

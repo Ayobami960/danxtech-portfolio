@@ -105,6 +105,42 @@ export const refreshTokensRelations = relations(refreshTokens, ({ one }) => ({
   user: one(adminUsers, { fields: [refreshTokens.userId], references: [adminUsers.id] }),
 }));
 
+/**
+ * Server-side half of the 2FA login challenge. The cookie holds a signed id, so
+ * the challenge can be cancelled, consumed (single use) or exhausted rather
+ * than staying valid until it expires.
+ */
+export const twoFactorChallenges = pgTable(
+  "two_factor_challenges",
+  {
+    id: pk(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => adminUsers.id, { onDelete: "cascade" }),
+    expiresAt: tz("expires_at").notNull(),
+    /** Set when verified, cancelled, or exhausted. Never reused. */
+    consumedAt: tz("consumed_at"),
+    failedAttempts: integer("failed_attempts").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("two_factor_challenges_user_idx").on(t.userId),
+    index("two_factor_challenges_expires_idx").on(t.expiresAt),
+  ],
+);
+
+export type TwoFactorChallenge = typeof twoFactorChallenges.$inferSelect;
+
+export const twoFactorChallengesRelations = relations(
+  twoFactorChallenges,
+  ({ one }) => ({
+    user: one(adminUsers, {
+      fields: [twoFactorChallenges.userId],
+      references: [adminUsers.id],
+    }),
+  }),
+);
+
 export const recoveryCodes = pgTable(
   "recovery_codes",
   {
