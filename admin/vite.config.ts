@@ -9,11 +9,14 @@ const DEV_API_TARGET = "http://localhost:8001";
 const DEV_SERVER_PORT = 5173;
 
 /**
- * `connect-src 'self'` is enough because every API call is relative. Only the
- * dev server's own WebSocket origin is added, and only while serving.
+ * Every API call is relative, so `connect-src 'self'` covers the app. The one
+ * exception is the image/PDF upload: the browser POSTs the file straight to
+ * Cloudinary (`api.cloudinary.com`) after the API signs it, so that host must
+ * be allowed or the upload fails as a network error. The dev server's own
+ * WebSocket origin is added only while serving.
  */
 const buildCsp = (isDevServer: boolean): string => {
-  const connect = ["'self'"];
+  const connect = ["'self'", "https://api.cloudinary.com"];
   if (isDevServer) connect.push(`ws://localhost:${DEV_SERVER_PORT}`);
 
   return [
@@ -34,6 +37,9 @@ const buildCsp = (isDevServer: boolean): string => {
  * no longer has an absolute API origin, so the policy is identical everywhere
  * except the dev WebSocket origin. `frame-ancestors` is ignored in a meta tag
  * and is covered by `X-Frame-Options: DENY` in vercel.json.
+ *
+ * Keep `https://api.cloudinary.com` in `connect-src` for browser-direct
+ * uploads (covers, gallery images, project documents and the resume).
  */
 const cspPlugin = (isDevServer: boolean): Plugin => ({
   name: "admin-csp",

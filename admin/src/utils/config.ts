@@ -3,7 +3,8 @@
  * proxy and the host rewrite (vercel.json) forward `/api` to the backend, so:
  *   - no backend URL is baked into the bundle,
  *   - the session cookie stays first-party (no CORS, no SameSite=None),
- *   - CSP `connect-src 'self'` is sufficient.
+ *   - CSP only needs `'self'` plus the Cloudinary upload host used by
+ *     browser-direct uploads.
  */
 export const API_BASE = "/api/v1";
 
