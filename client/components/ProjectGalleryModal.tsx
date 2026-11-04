@@ -22,7 +22,6 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { FaGithub } from "react-icons/fa6";
-import LoadingSpinner from "./ui/LoadingSpinner";
 
 const AUTOPLAY_MS = 5000;
 
@@ -70,7 +69,6 @@ export default function ProjectGalleryModal({
   const [playing, setPlaying] = useState(false);
   const [hovering, setHovering] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const [loaded, setLoaded] = useState<Record<number, boolean>>({});
   const [failed, setFailed] = useState<Record<number, boolean>>({});
   const [fsSupported] = useState(
     () => typeof document !== "undefined" && !!document.fullscreenEnabled,
@@ -249,7 +247,6 @@ export default function ProjectGalleryModal({
     else dialogRef.current?.requestFullscreen?.();
   };
 
-  const markLoaded = (i: number) => setLoaded((l) => (l[i] ? l : { ...l, [i]: true }));
   const markFailed = (i: number) => setFailed((f) => (f[i] ? f : { ...f, [i]: true }));
 
   /* ------------------------------------------------------------ */
@@ -411,15 +408,6 @@ export default function ProjectGalleryModal({
             {/* current slide (animation lives on .lb-slide, drag transform on the inner div) */}
             <div key={`in-${index}`} className={`lb-slide ${inClass}`}>
               <div ref={dragRef} className="h-full w-full">
-                {!loaded[index] && (
-                  <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-[#0a1024]/60">
-                    <LoadingSpinner
-                      label="Loading screenshot"
-                      size={28}
-                      className="text-white/80"
-                    />
-                  </div>
-                )}
                 {failed[index] ? (
                   <div className="flex h-full w-full items-center justify-center font-mono text-sm text-[#7c8fa6]">
                     Screenshot unavailable
@@ -430,11 +418,7 @@ export default function ProjectGalleryModal({
                     src={images[index]}
                     alt={`${project.title} screenshot ${index + 1} of ${total}`}
                     draggable={false}
-                    onLoad={() => markLoaded(index)}
-                    onError={() => {
-                      markLoaded(index);
-                      markFailed(index);
-                    }}
+                    onError={() => markFailed(index)}
                     className="h-full w-full object-contain p-2 sm:p-4"
                     style={{
                       transform: zoomed ? "scale(2.4)" : "scale(1)",

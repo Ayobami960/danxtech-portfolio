@@ -12,6 +12,11 @@ export type SignedUploadResult = {
   url: string;
   /** Cloudinary `public_id`, always inside this project's `portfolio/` prefix. */
   publicId: string;
+  /**
+   * Cloudinary `bytes` for the stored object. Optional because older admin
+   * builds send only the url/publicId pair; it is display metadata only.
+   */
+  bytes?: number;
 };
 
 const PORTFOLIO_PREFIX = "portfolio/";
@@ -77,7 +82,15 @@ export const validateSignedUpload = (input: unknown): SignedUploadResult => {
     );
   }
 
-  return { url, publicId };
+  // Size is optional and only ever shown in the UI, so an odd value is treated
+  // as absent instead of failing an upload that Cloudinary already accepted.
+  const bytes = record.bytes;
+  const sizeBytes =
+    typeof bytes === "number" && Number.isInteger(bytes) && bytes > 0
+      ? bytes
+      : undefined;
+
+  return sizeBytes === undefined ? { url, publicId } : { url, publicId, bytes: sizeBytes };
 };
 
 /** The storage key is the Cloudinary public_id for the driver we use now. */

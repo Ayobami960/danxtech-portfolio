@@ -71,6 +71,8 @@ export const upsertResume = async (input: {
   publicId: string;
   originalName: string;
   mimeType: string;
+  /** Size Cloudinary reported for the stored object; `null` when unknown. */
+  sizeBytes?: number | null;
 }): Promise<ResumeMetadata> => {
   const now = new Date();
   const rows = await db
@@ -83,7 +85,7 @@ export const upsertResume = async (input: {
       mimeType: input.mimeType,
       data: null,
       storageKey: null,
-      sizeBytes: null,
+      sizeBytes: input.sizeBytes ?? null,
       sha256: null,
       uploadedAt: now,
     })
@@ -96,7 +98,7 @@ export const upsertResume = async (input: {
         mimeType: input.mimeType,
         data: null,
         storageKey: null,
-        sizeBytes: null,
+        sizeBytes: input.sizeBytes ?? null,
         sha256: null,
         uploadedAt: now,
         updatedAt: now,

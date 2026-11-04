@@ -18,6 +18,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import GlobalLoadingScreen from "@/components/global/GlobalLoadingScreen";
 import { errorMessage } from "@/lib/api";
 import {
   uploadChatAttachment,
@@ -57,6 +58,7 @@ import {
   sendOverSocket,
 } from "@/lib/chat/connection";
 import { useChatDispatch, useChatSelector } from "@/lib/chat/hooks";
+import { useGlobalLoading } from "@/lib/loading";
 import {
   clearChatSession,
   getGuestToken,
@@ -212,6 +214,7 @@ const Ticks = ({ message }: { message: ChatMessage }) => {
 
 export default function ChatScreen() {
   const dispatch = useChatDispatch();
+  const { isLoading, begin } = useGlobalLoading();
   const phase = useChatSelector((state) => state.chat.phase);
   const conversation = useChatSelector((state) => state.chat.conversation);
   const developerName = useChatSelector((state) => state.chat.developerName);
@@ -423,6 +426,9 @@ export default function ChatScreen() {
     }
 
     setGuestToken(stored.token);
+    // The global loader is tied to the request itself, not to a component
+    // spinner, and releases on success, failure and the safety timeout alike.
+    const releaseLoading = begin();
     void join()
       .unwrap()
       .then((result) => {
@@ -440,7 +446,8 @@ export default function ChatScreen() {
         } else {
           dispatch(joinFailed("error"));
         }
-      });
+      })
+      .finally(releaseLoading);
 
     return () => {
       cancelled = true;
@@ -678,16 +685,10 @@ export default function ChatScreen() {
   };
 
   /* --------------------------------- render ----------------------------------- */
-  if (phase === "joining") {
-    return (
-      <div className="flex min-h-screen items-center justify-center px-6!">
-        <div className="flex flex-col items-center gap-3 text-center" role="status">
-          <Loader2 size={26} className="animate-spin text-[#3b82f6]" />
-          <p className="font-grotesk text-lg text-white">Opening your chat…</p>
-          <p className="font-mono text-xs text-[#7c8fa6]">Checking the invite link</p>
-        </div>
-      </div>
-    );
+  // Initial session opening uses the application's single loading screen; the
+  // conversation appears whole once the join request has settled.
+  if (phase === "joining" || isLoading) {
+    return <GlobalLoadingScreen />;
   }
 
   if (phase === "verify" && link) {

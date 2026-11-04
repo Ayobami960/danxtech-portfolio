@@ -30,8 +30,14 @@ export default function ResumePage() {
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   const info = query.data && query.data.available ? query.data : null;
-  const downloadUrl = `${API_BASE}/resume/download`;
-  const previewUrl = `${API_BASE}/resume/download?inline=1`;
+  // Version both links with the row's updatedAt: a replacement changes it, so
+  // neither link can resolve to a PDF the browser already cached.
+  const parsedVersion = info ? new Date(info.updatedAt).getTime() : Number.NaN;
+  const version = Number.isFinite(parsedVersion) ? parsedVersion : null;
+  const downloadUrl = `${API_BASE}/resume/download${version === null ? "" : `?v=${version}`}`;
+  const previewUrl = `${API_BASE}/resume/download?inline=1${
+    version === null ? "" : `&v=${version}`
+  }`;
 
   const onFiles = (files: File[]): void => {
     const file = files[0];
@@ -58,6 +64,8 @@ export default function ResumePage() {
         await update({
           url: result.url,
           publicId: result.publicId,
+          // Keeps the stored size in sync so the site never shows 0 KB.
+          ...(result.bytes === undefined ? {} : { bytes: result.bytes }),
         }).unwrap();
         toast.success(info ? "Resume replaced" : "Resume uploaded");
       } catch (error) {

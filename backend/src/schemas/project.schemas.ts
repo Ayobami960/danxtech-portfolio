@@ -30,6 +30,11 @@ export const signedUploadResultSchema = z
       message: "url must use https.",
     }),
     publicId: cloudinaryPublicId,
+    /**
+     * Cloudinary `bytes` for the stored object (display metadata). Optional so
+     * an admin build that predates it keeps working.
+     */
+    bytes: z.number().int().positive().optional(),
   })
   .strict();
 

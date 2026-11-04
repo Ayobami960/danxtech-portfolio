@@ -1018,8 +1018,7 @@ export default function HeroSection({
               {resume.available && (
                 <a
                   href={resumeHref}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  download={resume.fileName}
                   title={`Download ${resume.fileName} (${formatBytes(resume.sizeBytes)})`}
                   aria-label={`Download ${resume.fileName} (${formatBytes(resume.sizeBytes)})`}
                   className="font-grotesk inline-flex items-center gap-2 font-semibold text-[#7c8fa6] transition-colors duration-200 hover:text-[#f0a500]"

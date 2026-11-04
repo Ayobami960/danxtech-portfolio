@@ -1,6 +1,6 @@
-import PageLoader from "@/components/ui/PageLoader";
+import GlobalLoadingScreen from "@/components/global/GlobalLoadingScreen";
 
-/** Route-level loading boundary: one spinner for the whole viewport. */
+/** The single global loading screen, rendered while this route loads. */
 export default function Loading() {
-  return <PageLoader label="Loading the portfolio" />;
+  return <GlobalLoadingScreen />;
 }

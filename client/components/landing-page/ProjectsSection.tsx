@@ -124,7 +124,7 @@ export default function ProjectsSection({ projects }: { projects: PublicProject[
 
       <div className="relative px-6! lg:px-16!">
         <SectionHeader
-          index="06"
+          index="07"
           tag="Work"
           title={
             <>

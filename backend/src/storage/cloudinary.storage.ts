@@ -165,6 +165,34 @@ export const signChatUpload = async (
   return { signature, timestamp, apiKey, cloudName, resourceType, params };
 };
 
+/**
+ * Signed Cloudinary API download URL for one uploaded asset.
+ *
+ * Public delivery URLs for raw PDFs are blocked on accounts that restrict
+ * PDF/ZIP delivery (the CDN answers 401 "deny or ACL failure"). The
+ * authenticated download endpoint still returns the bytes, so the API proxies
+ * it and never exposes this signed URL to the browser.
+ */
+export const cloudinarySignedDownloadUrl = (
+  publicId: string,
+  resourceType: ResourceType = "raw",
+): string => {
+  const { cloudName, apiKey, apiSecret } = cloudinaryEnv();
+  const timestamp = String(Math.round(Date.now() / 1000));
+  const params: Record<string, string> = {
+    public_id: publicId,
+    type: "upload",
+    timestamp,
+  };
+  const signature = cloudinarySignParams(params, apiSecret);
+  const search = new URLSearchParams({
+    ...params,
+    api_key: apiKey,
+    signature,
+  });
+  return `${CLOUDINARY_BASE_URL}/v1_1/${cloudName}/${resourceType}/download?${search.toString()}`;
+};
+
 export const cloudinaryDeletePublicId = async (
   publicId: string,
   resourceType: ResourceType = "image",

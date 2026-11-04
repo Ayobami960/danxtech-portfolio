@@ -64,19 +64,58 @@ const safeFileName = (name: string): string =>
 
 export const downloadResume = asyncHandler(async (request, response, next) => {
   const source = await getDownload();
+  const { inline } = query<{ inline?: "1" | "true" | "0" | "false" }>(request);
+  const disposition = inline === "1" || inline === "true" ? "inline" : "attachment";
+  const contentDisposition = `${disposition}; filename="${safeFileName(env.resumeDownloadName)}"`;
 
-  response.setHeader(
-    "Cache-Control",
-    "public, max-age=300, must-revalidate",
-  );
+  // The resume URL is stable (the admin's link carries no version query) and
+  // the file is replaced in place when a new PDF is uploaded, so any cache
+  // would keep serving the old or deleted PDF after a replacement. Every
+  // download therefore reads the current row and streams fresh bytes.
+  response.setHeader("Cache-Control", "no-store");
 
-  // Cloudinary-hosted rows: hand the browser the delivery URL instead of
-  // proxying the PDF through the API (which also dodges the body-size limit).
+  // Legacy non-Cloudinary rows: hand the browser the delivery URL directly.
   if (source.kind === "url") {
     if (request.method !== "HEAD") {
       await countDownload();
     }
     response.redirect(302, source.url);
+    return;
+  }
+
+  // Cloudinary-hosted rows: public raw PDF delivery is blocked on accounts
+  // that restrict PDF/ZIP delivery, so fetch the asset through Cloudinary's
+  // authenticated download endpoint and stream the bytes from this origin.
+  // The signed URL (and API credentials) never reach the browser.
+  if (source.kind === "signed") {
+    response.setHeader("Content-Type", "application/pdf");
+    response.setHeader("Content-Disposition", contentDisposition);
+
+    if (request.method === "HEAD") {
+      response.status(200).end();
+      return;
+    }
+
+    let bytes: Buffer;
+    try {
+      const upstream = await fetch(source.url, {
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!upstream.ok) {
+        throw new Error(`Cloudinary download failed with status ${upstream.status}.`);
+      }
+      bytes = Buffer.from(await upstream.arrayBuffer());
+    } catch {
+      throw new AppError(
+        502,
+        ERROR_CODES.SERVICE_UNAVAILABLE,
+        "The resume could not be downloaded right now. Please try again.",
+      );
+    }
+
+    response.setHeader("Content-Length", String(bytes.byteLength));
+    await countDownload();
+    response.end(bytes);
     return;
   }
 
@@ -90,14 +129,8 @@ export const downloadResume = asyncHandler(async (request, response, next) => {
     return;
   }
 
-  const { inline } = query<{ inline?: "1" | "true" | "0" | "false" }>(request);
-  const disposition = inline === "1" || inline === "true" ? "inline" : "attachment";
-
   response.setHeader("Content-Type", "application/pdf");
-  response.setHeader(
-    "Content-Disposition",
-    `${disposition}; filename="${safeFileName(env.resumeDownloadName)}"`,
-  );
+  response.setHeader("Content-Disposition", contentDisposition);
   response.setHeader("Content-Length", String(resume.sizeBytes ?? 0));
 
   if (request.method === "HEAD") {

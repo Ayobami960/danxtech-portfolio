@@ -90,7 +90,7 @@ export default function SkillsSection({ groups }: { groups: SkillGroup[] }) {
 
       <div className="relative px-6! lg:px-16!">
         <SectionHeader
-          index="04"
+          index="05"
           tag="Toolkit"
           title={
             <>

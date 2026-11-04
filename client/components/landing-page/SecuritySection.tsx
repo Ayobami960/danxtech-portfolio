@@ -27,7 +27,7 @@ export default function SecuritySection({ security }: { security: SecurityConten
 
       <div className="relative px-6! lg:px-16!">
         <SectionHeader
-          index="05"
+          index="06"
           tag="Cybersecurity"
           title={
             <>

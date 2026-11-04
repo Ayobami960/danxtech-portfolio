@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Space_Grotesk, Inter, JetBrains_Mono } from "next/font/google";
 import UpdateOverlay from "@/components/ui/UpdateOverlay";
 import OfflineBanner from "@/components/ui/OfflineBanner";
+import { GlobalLoadingProvider } from "@/lib/loading";
 import "./globals.css";
 
 const spaceGrotesk = Space_Grotesk({
@@ -36,9 +37,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       className={`${spaceGrotesk.variable} ${inter.variable} ${jetbrainsMono.variable}`}
     >
       <body suppressHydrationWarning style={{ fontFamily: "var(--font-inter), sans-serif" }}>
-        {children}
-        <OfflineBanner />
-        <UpdateOverlay />
+        <GlobalLoadingProvider>
+          {children}
+          <OfflineBanner />
+          <UpdateOverlay />
+        </GlobalLoadingProvider>
       </body>
     </html>
   );

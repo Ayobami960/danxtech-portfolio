@@ -14,6 +14,7 @@ import { audit } from "../repositories/audit-writer.js";
 import { REVALIDATE_TAGS } from "../config/constants.js";
 import { contentUpdated } from "./revalidate.service.js";
 import { deleteStoredFile } from "../storage/index.js";
+import { cloudinarySignedDownloadUrl } from "../storage/cloudinary.storage.js";
 import { validateSignedUpload } from "../lib/uploads.js";
 import type { SignedUploadResultInput } from "../schemas/project.schemas.js";
 import type { ResumeMetadata as ResumeRow } from "../repositories/resume.repository.js";
@@ -81,6 +82,9 @@ export const uploadResume = async (
     publicId: validated.publicId,
     originalName: "resume.pdf",
     mimeType: "application/pdf",
+    // Cloudinary reports the stored size; without it the public site and the
+    // admin panel would show the resume as 0 KB after every upload.
+    sizeBytes: validated.bytes ?? null,
   });
 
   const replaceable =
@@ -135,18 +139,44 @@ export const removeResume = async (request: Request): Promise<void> => {
 };
 
 /**
- * Where the download route should send the browser. Cloudinary-hosted rows are
- * a redirect; legacy rows still stream their bytes out of PostgreSQL.
+ * Where the download route should get the bytes from:
+ *   - `signed`: a Cloudinary asset fetched with the API's authenticated
+ *     download URL (public raw delivery may be blocked by the account's
+ *     PDF/ZIP delivery setting).
+ *   - `url`: a legacy public URL the browser can follow directly.
+ *   - `stream`: legacy bytes still stored in PostgreSQL.
  */
 export type ResumeSource =
+  | { kind: "signed"; resume: ResumeRow; url: string }
   | { kind: "url"; resume: ResumeRow; url: string }
   | { kind: "stream"; resume: ResumeRow; stream: Readable };
+
+/**
+ * The public_id is the source of truth: a `portfolio/...` id means the bytes
+ * live in Cloudinary, even when the row stores a custom delivery domain or an
+ * older URL shape. Those rows are proxied through the authenticated download
+ * endpoint, which is the only path that works when public raw delivery of
+ * PDFs is blocked. Rows without such an id (seed assets, legacy ImageKit or
+ * PostgreSQL bytes) keep their own behavior.
+ */
+const isCloudinaryUpload = (resume: ResumeRow): boolean =>
+  Boolean(
+    resume.publicId?.startsWith("portfolio/") &&
+      !resume.publicId.includes(".."),
+  );
 
 export const getDownload = async (): Promise<ResumeSource> => {
   const resume = await getResume();
   if (!resume) throw notFound("No resume is available.");
 
   if (resume.url) {
+    if (isCloudinaryUpload(resume) && resume.publicId) {
+      return {
+        kind: "signed",
+        resume,
+        url: cloudinarySignedDownloadUrl(resume.publicId, "raw"),
+      };
+    }
     return { kind: "url", resume, url: resume.url };
   }
 

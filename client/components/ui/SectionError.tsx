@@ -6,8 +6,7 @@ import { AlertTriangle, RotateCw } from "lucide-react";
 
 /**
  * Section-level failure state. One failing block renders this instead of
- * breaking the rest of the page; Retry re-runs the server render so only the
- * failed Suspense boundary fetches again.
+ * breaking the rest of the page; Retry re-runs the page's single initial read.
  */
 export default function SectionError({
   title,

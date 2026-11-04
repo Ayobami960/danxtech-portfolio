@@ -6,6 +6,7 @@ import {
   listStoredGalleryKeys,
 } from "../repositories/project.repository.js";
 import { getResume } from "../repositories/resume.repository.js";
+import { cloudinarySignedDownloadUrl } from "../storage/cloudinary.storage.js";
 import { getStorage } from "../storage/index.js";
 
 /** Maximum number of concurrent Cloudinary HEAD checks. */
@@ -119,7 +120,15 @@ const headProbe = async (
   resourceType: "image" | "raw",
 ): Promise<Probe> => {
   try {
-    const response = await fetch(getStorage().publicUrl(key, resourceType), {
+    // Raw PDFs cannot be checked on the public CDN URL: accounts that block
+    // PDF/ZIP delivery answer 401 there, which says nothing about whether the
+    // object exists. The authenticated download endpoint is exactly the URL
+    // the resume route serves from, so it is probed instead.
+    const target =
+      resourceType === "raw"
+        ? cloudinarySignedDownloadUrl(key, "raw")
+        : getStorage().publicUrl(key, resourceType);
+    const response = await fetch(target, {
       method: "HEAD",
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
@@ -140,8 +149,10 @@ const headProbe = async (
 /**
  * Compare the keys stored in the database with the files actually present in
  * Cloudinary. Because Cloudinary has no cheap per-folder listing for
- * arbitrary public_ids, every key is verified with a HEAD request to its
- * public URL. A network failure is reported as "unknown", never as "missing".
+ * arbitrary public_ids, every key is verified with a HEAD request: images on
+ * their public delivery URL, PDFs on the authenticated download endpoint (the
+ * public one answers 401 when raw PDF delivery is blocked). A network failure
+ * is reported as "unknown", never as "missing".
  */
 export const runStorageIntegrityCheck =
   async (): Promise<StorageIntegrityReport> => {

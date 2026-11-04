@@ -16,6 +16,8 @@ export type CloudinaryUploadResult = {
   url: string;
   /** Cloudinary `public_id`; always inside the `portfolio/` prefix. */
   publicId: string;
+  /** Cloudinary `bytes` for the stored object, used for the resume's size. */
+  bytes?: number;
   resourceType: CloudinaryResourceType;
 };
 
@@ -46,11 +48,16 @@ type SignResponse = {
 type CloudinaryUploadPayload = {
   secure_url?: string;
   public_id?: string;
+  bytes?: number;
   error?: { message?: string };
 };
 
 /** A required-field view of Cloudinary's answer, returned by `postToCloudinary`. */
-type CloudinaryUploadData = { secure_url: string; public_id: string };
+type CloudinaryUploadData = {
+  secure_url: string;
+  public_id: string;
+  bytes?: number;
+};
 
 const readCookie = (name: string): string | null => {
   for (const part of document.cookie.split(";")) {
@@ -149,7 +156,11 @@ const postToCloudinary = async (
           return;
         }
         onProgress?.(100);
-        resolve({ secure_url: payload.secure_url, public_id: payload.public_id });
+        resolve({
+          secure_url: payload.secure_url,
+          public_id: payload.public_id,
+          ...(typeof payload.bytes === "number" ? { bytes: payload.bytes } : {}),
+        });
         return;
       }
 
@@ -221,6 +232,7 @@ export async function uploadToCloudinary(
   return {
     url: data.secure_url,
     publicId: data.public_id,
+    ...(data.bytes === undefined ? {} : { bytes: data.bytes }),
     resourceType: signed.resourceType,
   };
 }

@@ -1,16 +1,15 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { GraduationCap, Shield, Code2, Award, ChevronDown } from "lucide-react";
+import { Shield, Code2, ChevronDown } from "lucide-react";
 import AnimatedSection from "@/components/ui/AnimatedSection";
 import SectionHeader from "@/components/ui/SectionHeader";
 import SpotlightCard from "@/components/ui/SpotlightCard";
-import type { CredentialItem, ExperienceItem } from "@/lib/api";
+import type { ExperienceItem } from "@/lib/api";
 
 type Exp = ExperienceItem;
 type Filter = "all" | "engineering" | "security";
 
-const GOLD = "#f0a500";
 const GREEN = "#34d399";
 const COLLAPSE_AFTER = 3;
 
@@ -147,15 +146,10 @@ function ExperienceCard({ exp }: { exp: Exp }) {
 /* ================================================================== */
 export default function ExperienceSection({
   experience,
-  credentials,
 }: {
   experience: ExperienceItem[];
-  credentials: CredentialItem[];
 }) {
   const entries: ExperienceItem[] = experience;
-  const degree = credentials.find((item) => item.kind === "degree") ?? null;
-  const certifications = credentials.filter((item) => item.kind === "certification");
-  const hasEducation = Boolean(degree) || certifications.length > 0;
   const [filter, setFilter] = useState<Filter>("all");
 
   const engCount = entries.filter((e) => e.type !== "security").length;
@@ -170,7 +164,6 @@ export default function ExperienceSection({
   const visible = entries.filter((e) =>
     filter === "all" ? true : filter === "security" ? e.type === "security" : e.type !== "security"
   );
-  const showEducation = filter === "all" && hasEducation;
 
   return (
     <section id="experience" className="relative overflow-hidden bg-[#0e1528] py-28!">
@@ -185,7 +178,7 @@ export default function ExperienceSection({
 
       <div className="relative px-6! lg:px-16!">
         <SectionHeader
-          index="03"
+          index="04"
           tag="Career"
           title={
             <>
@@ -196,7 +189,7 @@ export default function ExperienceSection({
         />
 
         {/* ============ EMPTY ============ */}
-        {entries.length === 0 && !hasEducation ? (
+        {entries.length === 0 ? (
           <p className="py-16! text-center font-mono text-sm text-[#7c8fa6]">
             No experience entries yet — check back soon.
           </p>
@@ -234,7 +227,7 @@ export default function ExperienceSection({
         {/* ============ TIMELINE ============ */}
         <div key={filter}>
           {visible.map((exp, i) => {
-            const isLast = !showEducation && i === visible.length - 1;
+            const isLast = i === visible.length - 1;
             return (
               <AnimatedSection key={`${exp.role}-${exp.company}-${i}`} delay={i * 100}>
                 <TimelineRow
@@ -272,77 +265,6 @@ export default function ExperienceSection({
             );
           })}
 
-          {/* ============ EDUCATION ============ */}
-          {showEducation && (
-            <AnimatedSection delay={visible.length * 100}>
-              <TimelineRow
-                color={GOLD}
-                last
-                meta={
-                  <span className="font-mono text-sm text-[#c3d0e0]">
-                    {degree?.period ?? "Education"}
-                  </span>
-                }
-              >
-                <SpotlightCard
-                  glow={`${GOLD}22`}
-                  className="rounded-2xl border bg-[#131c35]/70 p-6! backdrop-blur transition-all duration-300 hover:-translate-y-0.5 sm:p-7!"
-                  style={{ borderColor: `${GOLD}2e` }}
-                >
-                  <div
-                    aria-hidden
-                    className="absolute inset-x-0 top-0 h-px"
-                    style={{ background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)` }}
-                  />
-
-                  <div className="mb-5! flex items-start gap-4">
-                    <div
-                      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl"
-                      style={{ background: `${GOLD}18`, border: `1px solid ${GOLD}33`, color: GOLD }}
-                    >
-                      <GraduationCap size={22} />
-                    </div>
-                    <div>
-                      <h3 className="font-grotesk text-xl font-bold text-white sm:text-2xl">
-                        {degree?.title ?? "Certifications"}
-                      </h3>
-                      {degree ? (
-                        <div className="mt-1.5! font-mono text-sm" style={{ color: GOLD }}>
-                          {degree.issuer}
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  {certifications.length > 0 && (
-                    <>
-                      <div className="mb-3! font-mono text-[11px] uppercase tracking-[0.2em] text-[#7c8fa6]">
-                        Certifications
-                      </div>
-                      <ul className="grid gap-2.5">
-                        {certifications.map((c) => (
-                          <li
-                            key={c.id}
-                            className="flex items-start gap-3 rounded-xl border border-white/8 bg-white/3 px-4! py-3!"
-                          >
-                            <Award size={16} className="mt-0.5 shrink-0" style={{ color: GOLD }} />
-                            <div className="min-w-0">
-                              <div className="text-sm font-medium text-white">{c.title}</div>
-                              {[c.issuer, c.period].filter(Boolean).length > 0 && (
-                                <div className="mt-0.5! break-words font-mono text-xs text-[#8fa1b8]">
-                                  {[c.issuer, c.period].filter(Boolean).join(" · ")}
-                                </div>
-                              )}
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    </>
-                  )}
-                </SpotlightCard>
-              </TimelineRow>
-            </AnimatedSection>
-          )}
         </div>
       </div>
     </section>

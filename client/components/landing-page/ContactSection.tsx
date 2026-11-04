@@ -146,7 +146,7 @@ export default function ContactSection({
 
       <div className="relative px-6! lg:px-16!">
         <SectionHeader
-          index="07"
+          index="08"
           tag="Let's talk"
           title={
             <>

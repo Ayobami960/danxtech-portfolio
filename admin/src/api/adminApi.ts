@@ -471,7 +471,10 @@ export const adminApi = createApi({
       query: () => "/admin/resume",
       providesTags: ["Resume"],
     }),
-    updateResume: build.mutation<ResumeInfo, { url: string; publicId: string }>({
+    updateResume: build.mutation<
+      ResumeInfo,
+      { url: string; publicId: string; bytes?: number }
+    >({
       query: (body) => ({ url: "/admin/resume", method: "PUT", body }),
       invalidatesTags: ["Resume", "Stats"],
     }),

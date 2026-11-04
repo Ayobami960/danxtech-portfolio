@@ -122,7 +122,7 @@ export default function AboutSection({
         </div>
 
         {/* ============ CREDENTIALS ============ */}
-        {credentialCards.length > 0 ? (
+        {/* {credentialCards.length > 0 ? (
         <Animated delay={250}>
           <div className="mt-8! grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
             {credentialCards.map(({ icon: Icon, label, title, meta }) => (
@@ -144,7 +144,7 @@ export default function AboutSection({
             ))}
           </div>
         </Animated>
-        ) : null}
+        ) : null} */}
       </div>
     </section>
   );
